@@ -453,11 +453,17 @@ int MainWindow::currentChapter() const
 void MainWindow::showHideWindow()
 {
     if (isVisible()) {
-        if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))
-            && !QSystemTrayIcon::isSystemTrayAvailable()) {
-            QMessageBox::information(this, QStringLiteral("无法隐藏"),
-                QStringLiteral("Wayland 下隐藏窗口后只能通过托盘图标恢复，"
-                               "但当前没有可用的托盘，已取消隐藏。"));
+        if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
+            if (!QSystemTrayIcon::isSystemTrayAvailable()) {
+                QMessageBox::information(this, QStringLiteral("无法隐藏"),
+                    QStringLiteral("Wayland 下隐藏窗口后只能通过托盘或 niri 快捷键恢复，"
+                                   "但当前都没有可用条件，已取消隐藏。"));
+                return;
+            }
+            hide();
+            if (m_tray && m_tray->isVisible())
+                m_tray->showMessage(QStringLiteral("Reader 已隐藏"),
+                                    QStringLiteral("点击托盘图标可恢复显示"));
             return;
         }
         hide();

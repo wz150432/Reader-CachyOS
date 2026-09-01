@@ -23,6 +23,7 @@ add_library(reader_core STATIC
     src/core/Book.cpp src/core/Book.h
     src/core/TextBook.cpp src/core/TextBook.h
     src/core/Page.cpp src/core/Page.h
+    src/core/Settings.cpp src/core/Settings.h
 )
 target_include_directories(reader_core PUBLIC src)
 target_link_libraries(reader_core PUBLIC Qt6::Core Qt6::Gui)
@@ -46,3 +47,8 @@ qt_add_executable(tst_page tests/tst_page.cpp)
 target_link_libraries(tst_page PRIVATE reader_core Qt6::Test)
 add_test(NAME page COMMAND tst_page)
 set_tests_properties(page PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_settings tests/tst_settings.cpp)
+target_link_libraries(tst_settings PRIVATE reader_core Qt6::Test)
+add_test(NAME settings COMMAND tst_settings)
+set_tests_properties(settings PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

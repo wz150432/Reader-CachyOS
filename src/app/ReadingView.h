@@ -30,6 +30,12 @@ public:
     int pageCount() const { return m_page.pageCount(); }
     int lineOffset() const { return m_page.lineOffset(); }
     QPair<int, int> currentPageCharRange() const { return m_page.charRange(m_page.currentPage()); }
+    void pageUp();
+    void pageDown();
+    void lineUp();
+    void lineDown();
+    void fontZoomIn();
+    void fontZoomOut();
     void goToChapter(int index);
     void goToPage(int page);
     void refreshLayout();

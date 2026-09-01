@@ -78,6 +78,48 @@ void ReadingView::goToPage(int page)
     }
 }
 
+void ReadingView::pageUp()
+{
+    if (m_page.prevPage()) {
+        emit pageChanged(m_page.currentPage());
+        update();
+    }
+}
+
+void ReadingView::pageDown()
+{
+    if (m_page.nextPage()) {
+        emit pageChanged(m_page.currentPage());
+        update();
+    }
+}
+
+void ReadingView::lineUp()
+{
+    if (m_page.prevLine()) {
+        emit pageChanged(m_page.currentPage());
+        update();
+    }
+}
+
+void ReadingView::lineDown()
+{
+    if (m_page.nextLine()) {
+        emit pageChanged(m_page.currentPage());
+        update();
+    }
+}
+
+void ReadingView::fontZoomIn()
+{
+    fontZoom(1);
+}
+
+void ReadingView::fontZoomOut()
+{
+    fontZoom(-1);
+}
+
 void ReadingView::refreshLayout()
 {
     m_page.setParams(toPageParams(m_settings));

@@ -14,6 +14,7 @@ private slots:
     void alwaysOnTopToggle();
     void hideBorderToggle();
     void autopageReflectsSettings();
+    void altHShortcutHidesWindow();
 };
 
 void TestWindow::hideAndShow()
@@ -64,6 +65,16 @@ void TestWindow::autopageReflectsSettings()
     QVERIFY(w.autoPageActive());
     w.toggleAutoPage();
     QVERIFY(!w.autoPageActive());
+}
+
+void TestWindow::altHShortcutHidesWindow()
+{
+    MainWindow w;
+    w.show();
+    QTest::keyClick(&w, Qt::Key_H, Qt::AltModifier);
+    QVERIFY(!w.isVisible());
+    w.show();
+    QVERIFY(w.isVisible());
 }
 
 int main(int argc, char *argv[])

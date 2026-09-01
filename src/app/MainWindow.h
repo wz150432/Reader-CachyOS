@@ -1,5 +1,6 @@
 #pragma once
 #include <QMainWindow>
+#include <QList>
 #include <memory>
 #include "core/Book.h"
 #include "core/Cache.h"
@@ -33,6 +34,7 @@ public:
     bool windowHiddenForTest() const { return !isVisible(); }
 
 protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
 
 private slots:
@@ -52,10 +54,12 @@ private:
     void applyKeyset();
     void createTrayIcon();
     void applyWindowOpacity();
+    void handleKeyAction(KeyAction action);
     ReadingView *m_view = nullptr;
     QTreeWidget *m_toc = nullptr;
     QLineEdit *m_searchEdit = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
+    bool m_topHintShown = false;
     Cache m_cache;
     Settings m_settings;
     std::shared_ptr<Book> m_book;

@@ -5,11 +5,16 @@
 #include "app/ReadingView.h"
 #include "app/SettingsDialog.h"
 #include "app/TagsetDialog.h"
+#include <QApplication>
 #include <QCloseEvent>
+#include <QCursor>
 #include <QDateTime>
 #include <QDialogButtonBox>
 #include <QDockWidget>
+#include <QEvent>
 #include <QFileDialog>
+#include <QGuiApplication>
+#include <QKeyEvent>
 #include <QKeySequence>
 #include <QLineEdit>
 #include <QMenu>
@@ -17,15 +22,18 @@
 #include <QMessageBox>
 #include <QSpinBox>
 #include <QSystemTrayIcon>
+#include <QToolTip>
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <utility>
 
 namespace reader {
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
+    QApplication::instance()->installEventFilter(this);
     m_cache.load();
     m_settings.load();
     m_view = new ReadingView(this);
@@ -71,7 +79,7 @@ MainWindow::MainWindow(QWidget *parent)
 
 void MainWindow::buildMenus()
 {
-    QMenu *file = menuBar()->addMenu(QStringLiteral("文件(&F)"));
+    QMenu *file = menuBar()->addMenu(QStringLiteral("文件"));
     QAction *open = file->addAction(QStringLiteral("打开(&O)"));
     open->setObjectName(QStringLiteral("actOpen"));
     open->setShortcut(QKeySequence::Open);
@@ -90,20 +98,20 @@ void MainWindow::buildMenus()
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
 
-    QMenu *tocMenu = menuBar()->addMenu(QStringLiteral("目录(&V)"));
+    QMenu *tocMenu = menuBar()->addMenu(QStringLiteral("目录"));
     QAction *tocToggle = tocMenu->addAction(QStringLiteral("显示/隐藏目录"));
     connect(tocToggle, &QAction::triggered, this, [this] {
         if (QDockWidget *dock = findChild<QDockWidget *>(QStringLiteral("tocDock")))
             dock->setVisible(!dock->isVisible());
     });
 
-    QMenu *bookmark = menuBar()->addMenu(QStringLiteral("书签(&M)"));
+    QMenu *bookmark = menuBar()->addMenu(QStringLiteral("书签"));
     QAction *bm = bookmark->addAction(QStringLiteral("添加书签"));
     connect(bm, &QAction::triggered, this, &MainWindow::onBookmarkRequested);
     QAction *bmList = bookmark->addAction(QStringLiteral("书签列表"));
     connect(bmList, &QAction::triggered, this, &MainWindow::openBookmarkList);
 
-    QMenu *settings = menuBar()->addMenu(QStringLiteral("设置(&S)"));
+    QMenu *settings = menuBar()->addMenu(QStringLiteral("设置"));
     QAction *display = settings->addAction(QStringLiteral("显示设置"));
     connect(display, &QAction::triggered, this, [this] {
         SettingsDialog dlg(&m_settings, this);
@@ -135,21 +143,16 @@ void MainWindow::buildMenus()
             m_view->setTags(m_settings.tags);
     });
     settings->addSeparator();
-    QMenu *windowMenu = menuBar()->addMenu(QStringLiteral("窗口(&W)"));
+    QMenu *windowMenu = menuBar()->addMenu(QStringLiteral("窗口"));
     QAction *fullAction = windowMenu->addAction(QStringLiteral("全屏"));
-    fullAction->setShortcut(m_settings.keyset.shortcut(KeyAction::Fullscreen));
     connect(fullAction, &QAction::triggered, this, &MainWindow::toggleFullscreen);
     QAction *topAction = windowMenu->addAction(QStringLiteral("窗口置顶"));
-    topAction->setShortcut(m_settings.keyset.shortcut(KeyAction::AlwaysOnTop));
     connect(topAction, &QAction::triggered, this, &MainWindow::toggleAlwaysOnTop);
     QAction *borderAction = windowMenu->addAction(QStringLiteral("隐藏边框"));
-    borderAction->setShortcut(m_settings.keyset.shortcut(KeyAction::HideBorder));
     connect(borderAction, &QAction::triggered, this, &MainWindow::toggleHideBorder);
     QAction *hideAction = windowMenu->addAction(QStringLiteral("隐藏窗口"));
-    hideAction->setShortcut(m_settings.keyset.shortcut(KeyAction::HideWindow));
     connect(hideAction, &QAction::triggered, this, &MainWindow::showHideWindow);
     QAction *autoPageAction = windowMenu->addAction(QStringLiteral("自动翻页"));
-    autoPageAction->setShortcut(m_settings.keyset.shortcut(KeyAction::AutoPage));
     connect(autoPageAction, &QAction::triggered, this, &MainWindow::toggleAutoPage);
     QAction *resetAction = settings->addAction(QStringLiteral("还原默认设置"));
     connect(resetAction, &QAction::triggered, this, [this] {
@@ -159,7 +162,7 @@ void MainWindow::buildMenus()
         resetSettings();
     });
 
-    QMenu *help = menuBar()->addMenu(QStringLiteral("帮助(&H)"));
+    QMenu *help = menuBar()->addMenu(QStringLiteral("帮助"));
     QAction *about = help->addAction(QStringLiteral("关于 ..."));
     connect(about, &QAction::triggered, this, [this] {
         QMessageBox::about(this, QStringLiteral("关于"),
@@ -300,6 +303,99 @@ void MainWindow::applyKeyset()
         quit->setShortcut(m_settings.keyset.shortcut(KeyAction::Quit));
 }
 
+bool MainWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    if (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress) {
+        auto *w = qobject_cast<QWidget *>(obj);
+        if (!w || w->window() != this)
+            return false;
+        auto *focus = QApplication::focusWidget();
+        if (qApp->activeModalWidget() || qobject_cast<QLineEdit *>(focus))
+            return false;
+        auto *ke = static_cast<QKeyEvent *>(event);
+        const QKeySequence seq(ke->keyCombination());
+        KeyAction matched = static_cast<KeyAction>(-1);
+        const QList<KeyAction> actions = m_settings.keyset.actions();
+        for (const KeyAction a : actions) {
+            if (a == KeyAction::OpenFile || a == KeyAction::Quit)
+                continue;
+            if (m_settings.keyset.shortcut(a).matches(seq) == QKeySequence::ExactMatch) {
+                matched = a;
+                break;
+            }
+        }
+        if (matched != static_cast<KeyAction>(-1)) {
+            if (event->type() == QEvent::ShortcutOverride) {
+                event->accept();
+                return false;
+            }
+            handleKeyAction(matched);
+            return true;
+        }
+    }
+    return QObject::eventFilter(obj, event);
+}
+
+void MainWindow::handleKeyAction(KeyAction a)
+{
+    switch (a) {
+    case KeyAction::PageDown:
+        m_view->pageDown();
+        break;
+    case KeyAction::PageUp:
+        m_view->pageUp();
+        break;
+    case KeyAction::LineDown:
+        m_view->lineDown();
+        break;
+    case KeyAction::LineUp:
+        m_view->lineUp();
+        break;
+    case KeyAction::ChapterDown:
+        if (m_book)
+            m_view->goToChapter(m_view->currentChapter() + 1);
+        break;
+    case KeyAction::ChapterUp:
+        if (m_book)
+            m_view->goToChapter(m_view->currentChapter() - 1);
+        break;
+    case KeyAction::FontZoomIn:
+        m_view->fontZoomIn();
+        break;
+    case KeyAction::FontZoomOut:
+        m_view->fontZoomOut();
+        break;
+    case KeyAction::AutoPage:
+        m_view->toggleAutoPage();
+        break;
+    case KeyAction::Search:
+        onSearchRequested();
+        break;
+    case KeyAction::Jump:
+        onJumpRequested();
+        break;
+    case KeyAction::AddBookmark:
+        onBookmarkRequested();
+        break;
+    case KeyAction::Fullscreen:
+        toggleFullscreen();
+        break;
+    case KeyAction::HideBorder:
+        toggleHideBorder();
+        break;
+    case KeyAction::AlwaysOnTop:
+        toggleAlwaysOnTop();
+        break;
+    case KeyAction::HideWindow:
+        showHideWindow();
+        break;
+    case KeyAction::EditMode:
+    case KeyAction::OpenFile:
+    case KeyAction::Quit:
+        break;
+    }
+}
+
 void MainWindow::resetSettings()
 {
     Settings fresh;
@@ -370,12 +466,23 @@ void MainWindow::toggleFullscreen()
 
 void MainWindow::toggleAlwaysOnTop()
 {
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
+        if (!m_topHintShown) {
+            m_topHintShown = true;
+            QToolTip::showText(QCursor::pos(), QStringLiteral("Wayland 桌面不支持窗口置顶"));
+        }
+        return;
+    }
     setWindowFlag(Qt::WindowStaysOnTopHint, !(windowFlags() & Qt::WindowStaysOnTopHint));
     show();
 }
 
 void MainWindow::toggleHideBorder()
 {
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
+        toggleFullscreen();
+        return;
+    }
     setWindowFlag(Qt::FramelessWindowHint, !(windowFlags() & Qt::FramelessWindowHint));
     show();
 }

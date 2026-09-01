@@ -2,6 +2,7 @@
 #include <QWidget>
 #include <memory>
 #include "core/Book.h"
+#include "core/Keyset.h"
 #include "core/Page.h"
 #include "core/Settings.h"
 
@@ -14,16 +15,29 @@ public:
     explicit ReadingView(QWidget *parent = nullptr);
     void setBook(std::shared_ptr<Book> book);
     void setSettings(const DisplaySettings &settings);
+    void setKeyset(const Keyset &keyset) { m_keyset = keyset; }
     int currentChapter() const { return m_chapter; }
     int currentPage() const { return m_page.currentPage(); }
     int pageCount() const { return m_page.pageCount(); }
+    int lineOffset() const { return m_page.lineOffset(); }
+    QPair<int, int> currentPageCharRange() const { return m_page.charRange(m_page.currentPage()); }
     void goToChapter(int index);
     void goToPage(int page);
     void refreshLayout();
+    bool findNext(const QString &keyword, bool forward = true);
+    void jumpToBookProgress(qreal progress);
+    void clearMatch() { m_matchStart = -1; m_matchEnd = -1; update(); }
+    int currentMatchStart() const { return m_matchStart; }
+    int currentMatchEnd() const { return m_matchEnd; }
 
 signals:
     void chapterChanged(int index);
     void pageChanged(int index);
+    void searchRequested();
+    void jumpRequested();
+    void bookmarkRequested();
+    void autoPageRequested();
+    void displaySettingsChanged(const reader::DisplaySettings &settings);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -34,11 +48,19 @@ protected:
 
 private:
     void loadChapter();
+    void nextChapter();
+    void prevChapter();
+    void fontZoom(int delta);
     std::shared_ptr<Book> m_book;
     DisplaySettings m_settings;
+    Keyset m_keyset;
     Page m_page;
+    QPixmap m_bgPixmap;
+    QString m_bgImagePath;
     int m_chapter = 0;
     bool m_hasBook = false;
+    int m_matchStart = -1;
+    int m_matchEnd = -1;
 };
 
 }

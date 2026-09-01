@@ -59,6 +59,7 @@ void TestReadingView::keyAndWheelNavigation()
     s.font = QFont(QStringLiteral("Noto Sans CJK SC"), 18);
     view.setSettings(s);
     view.setBook(book);
+    view.show();
     view.resize(300, 100);
     QVERIFY(view.pageCount() > 1);
     const int first = view.currentPage();
@@ -69,7 +70,7 @@ void TestReadingView::keyAndWheelNavigation()
     QWheelEvent wheel(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, -120),
                       Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QApplication::sendEvent(&view, &wheel);
-    QCOMPARE(view.currentPage(), first + 1);
+    QVERIFY(view.lineOffset() > 0 || view.currentPage() > first);
 }
 
 QTEST_MAIN(TestReadingView)

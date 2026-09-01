@@ -100,3 +100,12 @@ qt_add_executable(tst_settings2 tests/tst_settings2.cpp)
 target_link_libraries(tst_settings2 PRIVATE reader_core Qt6::Test)
 add_test(NAME settings2 COMMAND tst_settings2)
 set_tests_properties(settings2 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_readingview2
+    tests/tst_readingview2.cpp
+    src/app/ReadingView.cpp src/app/ReadingView.h
+)
+target_include_directories(tst_readingview2 PRIVATE src)
+target_link_libraries(tst_readingview2 PRIVATE reader_core Qt6::Test Qt6::Widgets)
+add_test(NAME readingview2 COMMAND tst_readingview2)
+set_tests_properties(readingview2 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

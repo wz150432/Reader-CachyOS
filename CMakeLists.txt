@@ -32,6 +32,7 @@ add_library(reader_core STATIC
     src/core/Settings.cpp src/core/Settings.h
     src/core/Cache.cpp src/core/Cache.h
     src/core/Keyset.cpp src/core/Keyset.h
+    src/core/NiriConfig.cpp src/core/NiriConfig.h
 )
 target_include_directories(reader_core PUBLIC src)
 target_link_libraries(reader_core PUBLIC Qt6::Core Qt6::Gui)
@@ -175,3 +176,8 @@ target_include_directories(tst_window PRIVATE src)
 target_link_libraries(tst_window PRIVATE reader_core Qt6::Test Qt6::Widgets)
 add_test(NAME window COMMAND tst_window)
 set_tests_properties(window PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_niriconfig tests/tst_niriconfig.cpp)
+target_link_libraries(tst_niriconfig PRIVATE reader_core Qt6::Test)
+add_test(NAME niriconfig COMMAND tst_niriconfig)
+set_tests_properties(niriconfig PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

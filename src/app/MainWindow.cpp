@@ -5,13 +5,16 @@
 #include "app/ReadingView.h"
 #include "app/SettingsDialog.h"
 #include "app/TagsetDialog.h"
+#include "core/NiriConfig.h"
 #include <QApplication>
 #include <QCloseEvent>
 #include <QCursor>
 #include <QDateTime>
 #include <QDialogButtonBox>
+#include <QDir>
 #include <QDockWidget>
 #include <QEvent>
+#include <QFile>
 #include <QFileDialog>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -21,7 +24,9 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QProcess>
+#include <QSaveFile>
 #include <QSpinBox>
+#include <QStandardPaths>
 #include <QSystemTrayIcon>
 #include <QToolTip>
 #include <QToolBar>
@@ -76,6 +81,7 @@ MainWindow::MainWindow(QWidget *parent)
     updateTitle();
     resize(960, 720);
     setMinimumSize(480, 320);
+    applyWindowOpacity();
     createTrayIcon();
 }
 
@@ -538,6 +544,30 @@ void MainWindow::createTrayIcon()
 void MainWindow::applyWindowOpacity()
 {
     setWindowOpacity(m_settings.display.windowAlpha / 255.0);
+    if (!QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
+        return;
+    const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation))
+                            .filePath(QStringLiteral("niri"));
+    const QString path = dir + QStringLiteral("/rules.kdl");
+    QFile f(path);
+    if (!f.exists() || !f.open(QIODevice::ReadOnly))
+        return;
+    const QString content = QString::fromUtf8(f.readAll());
+    f.close();
+    QString patched = content;
+    if (!reader::patchReaderOpacity(&patched, m_settings.display.windowAlpha / 255.0))
+        return;
+    if (patched == content)
+        return;
+    QSaveFile sf(path);
+    if (!sf.open(QIODevice::WriteOnly))
+        return;
+    sf.write(patched.toUtf8());
+    if (!sf.commit())
+        return;
+    QProcess::startDetached(QStringLiteral("niri"),
+                            {QStringLiteral("msg"), QStringLiteral("action"),
+                             QStringLiteral("load-config-file")});
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

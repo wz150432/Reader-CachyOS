@@ -11,6 +11,7 @@ public:
     QString title() const override;
     const QVector<Chapter> &chapters() const override { return m_chapters; }
     QString chapterText(int chapterIndex) const override;
+    qint64 totalCharCount() const override { return m_text.size(); }
     TextEncoding encoding() const { return m_encoding; }
 
 private:

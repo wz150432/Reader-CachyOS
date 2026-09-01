@@ -14,6 +14,7 @@ public:
     virtual QString title() const = 0;
     virtual const QVector<Chapter> &chapters() const = 0;
     virtual QString chapterText(int chapterIndex) const = 0;
+    virtual qint64 totalCharCount() const = 0;
     static std::shared_ptr<Book> create(const QString &filePath, QString *error = nullptr);
     const QString &filePath() const { return m_filePath; }
 

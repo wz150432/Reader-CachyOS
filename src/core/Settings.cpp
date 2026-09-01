@@ -29,6 +29,7 @@ void Settings::load()
     if (err.error != QJsonParseError::NoError || !doc.isObject())
         return;
     readDisplay(doc.object().value(QStringLiteral("display")).toObject());
+    keyset.load(doc.object().value(QStringLiteral("keys")).toObject());
 }
 
 void Settings::save() const
@@ -39,6 +40,7 @@ void Settings::save() const
         return;
     QJsonObject root;
     root.insert(QStringLiteral("display"), writeDisplay());
+    root.insert(QStringLiteral("keys"), keyset.save());
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     f.commit();
 }
@@ -76,6 +78,8 @@ void Settings::readDisplay(const QJsonObject &o)
     display.chapterPageBreak = readBool("chapter_page_break", display.chapterPageBreak);
     display.wordWrap = readBool("word_wrap", display.wordWrap);
     display.margin = readInt("margin", display.margin);
+    display.bgImagePath = o.value(QStringLiteral("bg_image")).toString();
+    display.windowAlpha = readInt("window_alpha", display.windowAlpha);
 }
 
 QJsonObject Settings::writeDisplay() const
@@ -95,6 +99,8 @@ QJsonObject Settings::writeDisplay() const
     o.insert(QStringLiteral("chapter_page_break"), display.chapterPageBreak);
     o.insert(QStringLiteral("word_wrap"), display.wordWrap);
     o.insert(QStringLiteral("margin"), display.margin);
+    o.insert(QStringLiteral("bg_image"), display.bgImagePath);
+    o.insert(QStringLiteral("window_alpha"), display.windowAlpha);
     return o;
 }
 

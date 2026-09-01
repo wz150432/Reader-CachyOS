@@ -3,6 +3,7 @@
 #include <QFont>
 #include <QJsonObject>
 #include <QString>
+#include "core/Keyset.h"
 
 namespace reader {
 
@@ -20,6 +21,8 @@ struct DisplaySettings
     bool chapterPageBreak = false;
     bool wordWrap = true;
     int margin = 24;
+    QString bgImagePath;
+    int windowAlpha = 255;
 };
 
 class Settings
@@ -27,6 +30,7 @@ class Settings
 public:
     explicit Settings(const QString &configFilePath = QString());
     DisplaySettings display;
+    Keyset keyset;
     void load();
     void save() const;
     static QString defaultConfigFilePath();

@@ -95,3 +95,8 @@ qt_add_executable(tst_page2 tests/tst_page2.cpp)
 target_link_libraries(tst_page2 PRIVATE reader_core Qt6::Test)
 add_test(NAME page2 COMMAND tst_page2)
 set_tests_properties(page2 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_settings2 tests/tst_settings2.cpp)
+target_link_libraries(tst_settings2 PRIVATE reader_core Qt6::Test)
+add_test(NAME settings2 COMMAND tst_settings2)
+set_tests_properties(settings2 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

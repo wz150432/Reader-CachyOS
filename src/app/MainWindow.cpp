@@ -20,6 +20,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QProcess>
 #include <QSpinBox>
 #include <QSystemTrayIcon>
 #include <QToolTip>
@@ -480,7 +481,11 @@ void MainWindow::toggleAlwaysOnTop()
 void MainWindow::toggleHideBorder()
 {
     if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
-        toggleFullscreen();
+        // Wayland 桌面不允许程序自行去掉装饰；niri 提供"窗口化全屏"，
+        // 隐藏边框并铺满工作区，与 F11 的真全屏区分开。
+        QProcess::startDetached(QStringLiteral("niri"),
+                                {QStringLiteral("msg"), QStringLiteral("action"),
+                                 QStringLiteral("toggle-windowed-fullscreen")});
         return;
     }
     setWindowFlag(Qt::FramelessWindowHint, !(windowFlags() & Qt::FramelessWindowHint));

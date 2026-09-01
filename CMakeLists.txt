@@ -19,6 +19,7 @@ enable_testing()
 
 add_library(reader_core STATIC
     src/core/TextCodec.cpp src/core/TextCodec.h
+    src/core/ChapterParser.cpp src/core/ChapterParser.h
 )
 target_include_directories(reader_core PUBLIC src)
 target_link_libraries(reader_core PUBLIC Qt6::Core Qt6::Gui)
@@ -27,3 +28,8 @@ qt_add_executable(tst_textcodec tests/tst_textcodec.cpp)
 target_link_libraries(tst_textcodec PRIVATE reader_core Qt6::Test)
 add_test(NAME textcodec COMMAND tst_textcodec)
 set_tests_properties(textcodec PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_chapterparser tests/tst_chapterparser.cpp)
+target_link_libraries(tst_chapterparser PRIVATE reader_core Qt6::Test)
+add_test(NAME chapterparser COMMAND tst_chapterparser)
+set_tests_properties(chapterparser PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

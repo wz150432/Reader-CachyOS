@@ -12,6 +12,7 @@ qt_add_executable(reader
     src/main.cpp
     src/app/MainWindow.cpp src/app/MainWindow.h
     src/app/ReadingView.cpp src/app/ReadingView.h
+    src/app/SettingsDialog.cpp src/app/SettingsDialog.h
 )
 target_include_directories(reader PRIVATE src)
 target_link_libraries(reader PRIVATE reader_core Qt6::Widgets)
@@ -67,3 +68,14 @@ qt_add_executable(tst_readingview
 target_link_libraries(tst_readingview PRIVATE reader_core Qt6::Test Qt6::Widgets)
 add_test(NAME readingview COMMAND tst_readingview)
 set_tests_properties(readingview PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_mainwindow
+    tests/tst_mainwindow.cpp
+    src/app/MainWindow.cpp src/app/MainWindow.h
+    src/app/SettingsDialog.cpp src/app/SettingsDialog.h
+    src/app/ReadingView.cpp src/app/ReadingView.h
+)
+target_include_directories(tst_mainwindow PRIVATE src)
+target_link_libraries(tst_mainwindow PRIVATE reader_core Qt6::Test Qt6::Widgets)
+add_test(NAME mainwindow COMMAND tst_mainwindow)
+set_tests_properties(mainwindow PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -11,9 +11,10 @@ qt_standard_project_setup()
 qt_add_executable(reader
     src/main.cpp
     src/app/MainWindow.cpp src/app/MainWindow.h
+    src/app/ReadingView.cpp src/app/ReadingView.h
 )
 target_include_directories(reader PRIVATE src)
-target_link_libraries(reader PRIVATE Qt6::Widgets)
+target_link_libraries(reader PRIVATE reader_core Qt6::Widgets)
 
 enable_testing()
 
@@ -58,3 +59,11 @@ qt_add_executable(tst_cache tests/tst_cache.cpp)
 target_link_libraries(tst_cache PRIVATE reader_core Qt6::Test)
 add_test(NAME cache COMMAND tst_cache)
 set_tests_properties(cache PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_readingview
+    tests/tst_readingview.cpp
+    src/app/ReadingView.cpp src/app/ReadingView.h
+)
+target_link_libraries(tst_readingview PRIVATE reader_core Qt6::Test Qt6::Widgets)
+add_test(NAME readingview COMMAND tst_readingview)
+set_tests_properties(readingview PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -75,6 +75,7 @@ MainWindow::MainWindow(QWidget *parent)
     buildMenus();
     updateTitle();
     resize(960, 720);
+    setMinimumSize(480, 320);
     createTrayIcon();
 }
 
@@ -451,10 +452,18 @@ int MainWindow::currentChapter() const
 
 void MainWindow::showHideWindow()
 {
-    if (isVisible())
+    if (isVisible()) {
+        if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))
+            && !QSystemTrayIcon::isSystemTrayAvailable()) {
+            QMessageBox::information(this, QStringLiteral("无法隐藏"),
+                QStringLiteral("Wayland 下隐藏窗口后只能通过托盘图标恢复，"
+                               "但当前没有可用的托盘，已取消隐藏。"));
+            return;
+        }
         hide();
-    else
+    } else {
         show();
+    }
 }
 
 void MainWindow::toggleFullscreen()

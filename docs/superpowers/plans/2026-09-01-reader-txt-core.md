@@ -2830,6 +2830,9 @@ void MainWindow::buildMenus()
         if (!path.isEmpty())
             openBook(path);
     });
+    QAction *clearRecent = file->addAction(QStringLiteral("清空(&C)"));
+    clearRecent->setEnabled(false);
+    clearRecent->setToolTip(QStringLiteral("第三阶段开放"));
     QAction *quit = file->addAction(QStringLiteral("退出(&X)"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);

@@ -13,6 +13,7 @@ qt_add_executable(reader
     src/app/MainWindow.cpp src/app/MainWindow.h
     src/app/ReadingView.cpp src/app/ReadingView.h
     src/app/SettingsDialog.cpp src/app/SettingsDialog.h
+    src/app/KeysetDialog.cpp src/app/KeysetDialog.h
 )
 target_include_directories(reader PRIVATE src)
 target_link_libraries(reader PRIVATE reader_core Qt6::Widgets)

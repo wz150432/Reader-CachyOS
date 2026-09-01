@@ -8,6 +8,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("Reader"));
     app.setOrganizationName(QStringLiteral("Reader"));
+    app.setDesktopFileName(QStringLiteral("reader.desktop"));
     if (QStyle *style = QStyleFactory::create(QStringLiteral("Fusion")))
         app.setStyle(style);
     QPalette pal;

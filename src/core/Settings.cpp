@@ -2,6 +2,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QSaveFile>
 #include <QStandardPaths>
@@ -30,6 +31,8 @@ void Settings::load()
         return;
     readDisplay(doc.object().value(QStringLiteral("display")).toObject());
     keyset.load(doc.object().value(QStringLiteral("keys")).toObject());
+    behavior = readBehavior(doc.object().value(QStringLiteral("behavior")).toObject());
+    tags = readTags(doc.object().value(QStringLiteral("tags")).toArray());
 }
 
 void Settings::save() const
@@ -41,8 +44,75 @@ void Settings::save() const
     QJsonObject root;
     root.insert(QStringLiteral("display"), writeDisplay());
     root.insert(QStringLiteral("keys"), keyset.save());
+    root.insert(QStringLiteral("behavior"), writeBehavior());
+    root.insert(QStringLiteral("tags"), writeTags());
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     f.commit();
+}
+
+static int intOr(const QJsonObject &o, const char *key, int fallback)
+{
+    const QString k = QLatin1String(key);
+    return o.contains(k) ? o.value(k).toInt(fallback) : fallback;
+}
+
+static bool boolOr(const QJsonObject &o, const char *key, bool fallback)
+{
+    const QString k = QLatin1String(key);
+    return o.contains(k) ? o.value(k).toBool() : fallback;
+}
+
+BehaviorSettings Settings::readBehavior(const QJsonObject &o)
+{
+    BehaviorSettings b;
+    b.autoPageIntervalMs = intOr(o, "auto_page_interval_ms", b.autoPageIntervalMs);
+    b.autoPageScrollMode = boolOr(o, "auto_page_scroll_mode", b.autoPageScrollMode);
+    b.scrollStep = intOr(o, "scroll_step", b.scrollStep);
+    b.minimizeToTray = boolOr(o, "minimize_to_tray", b.minimizeToTray);
+    b.doubleClickHide = boolOr(o, "double_click_hide", b.doubleClickHide);
+    return b;
+}
+
+QJsonObject Settings::writeBehavior() const
+{
+    QJsonObject o;
+    o.insert(QStringLiteral("auto_page_interval_ms"), behavior.autoPageIntervalMs);
+    o.insert(QStringLiteral("auto_page_scroll_mode"), behavior.autoPageScrollMode);
+    o.insert(QStringLiteral("scroll_step"), behavior.scrollStep);
+    o.insert(QStringLiteral("minimize_to_tray"), behavior.minimizeToTray);
+    o.insert(QStringLiteral("double_click_hide"), behavior.doubleClickHide);
+    return o;
+}
+
+QVector<TagItem> Settings::readTags(const QJsonArray &a)
+{
+    QVector<TagItem> out;
+    for (const QJsonValue &v : a) {
+        const QJsonObject o = v.toObject();
+        TagItem t;
+        t.keyword = o.value(QStringLiteral("keyword")).toString();
+        t.fg = QColor(o.value(QStringLiteral("fg")).toString());
+        t.bg = QColor(o.value(QStringLiteral("bg")).toString());
+        if (o.contains(QStringLiteral("enabled")))
+            t.enabled = o.value(QStringLiteral("enabled")).toBool();
+        if (!t.keyword.isEmpty())
+            out.append(t);
+    }
+    return out;
+}
+
+QJsonArray Settings::writeTags() const
+{
+    QJsonArray a;
+    for (const TagItem &t : tags) {
+        QJsonObject o;
+        o.insert(QStringLiteral("keyword"), t.keyword);
+        o.insert(QStringLiteral("fg"), t.fg.isValid() ? t.fg.name() : QString());
+        o.insert(QStringLiteral("bg"), t.bg.isValid() ? t.bg.name() : QString());
+        o.insert(QStringLiteral("enabled"), t.enabled);
+        a.append(o);
+    }
+    return a;
 }
 
 void Settings::readDisplay(const QJsonObject &o)

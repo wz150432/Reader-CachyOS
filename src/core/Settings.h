@@ -1,8 +1,10 @@
 #pragma once
 #include <QColor>
 #include <QFont>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <QVector>
 #include "core/Keyset.h"
 
 namespace reader {
@@ -25,12 +27,31 @@ struct DisplaySettings
     int windowAlpha = 255;
 };
 
+struct BehaviorSettings
+{
+    int autoPageIntervalMs = 3000;
+    bool autoPageScrollMode = false;
+    int scrollStep = 1;
+    bool minimizeToTray = false;
+    bool doubleClickHide = true;
+};
+
+struct TagItem
+{
+    QString keyword;
+    QColor fg;
+    QColor bg;
+    bool enabled = true;
+};
+
 class Settings
 {
 public:
     explicit Settings(const QString &configFilePath = QString());
     DisplaySettings display;
     Keyset keyset;
+    BehaviorSettings behavior;
+    QVector<TagItem> tags;
     void load();
     void save() const;
     static QString defaultConfigFilePath();
@@ -38,6 +59,10 @@ public:
 private:
     void readDisplay(const QJsonObject &o);
     QJsonObject writeDisplay() const;
+    static BehaviorSettings readBehavior(const QJsonObject &o);
+    QJsonObject writeBehavior() const;
+    static QVector<TagItem> readTags(const QJsonArray &a);
+    QJsonArray writeTags() const;
     QString m_path;
 };
 

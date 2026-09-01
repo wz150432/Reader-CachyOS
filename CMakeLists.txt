@@ -126,3 +126,8 @@ target_include_directories(tst_mainwindow2 PRIVATE src)
 target_link_libraries(tst_mainwindow2 PRIVATE reader_core Qt6::Test Qt6::Widgets)
 add_test(NAME mainwindow2 COMMAND tst_mainwindow2)
 set_tests_properties(mainwindow2 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_settings3 tests/tst_settings3.cpp)
+target_link_libraries(tst_settings3 PRIVATE reader_core Qt6::Test)
+add_test(NAME settings3 COMMAND tst_settings3)
+set_tests_properties(settings3 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

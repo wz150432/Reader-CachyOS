@@ -136,3 +136,21 @@ qt_add_executable(tst_page3 tests/tst_page3.cpp)
 target_link_libraries(tst_page3 PRIVATE reader_core Qt6::Test)
 add_test(NAME page3 COMMAND tst_page3)
 set_tests_properties(page3 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_autopage
+    tests/tst_autopage.cpp
+    src/app/ReadingView.cpp src/app/ReadingView.h
+)
+target_include_directories(tst_autopage PRIVATE src)
+target_link_libraries(tst_autopage PRIVATE reader_core Qt6::Test Qt6::Widgets)
+add_test(NAME autopage COMMAND tst_autopage)
+set_tests_properties(autopage PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_tags
+    tests/tst_tags.cpp
+    src/app/ReadingView.cpp src/app/ReadingView.h
+)
+target_include_directories(tst_tags PRIVATE src)
+target_link_libraries(tst_tags PRIVATE reader_core Qt6::Test Qt6::Widgets)
+add_test(NAME tags COMMAND tst_tags)
+set_tests_properties(tags PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

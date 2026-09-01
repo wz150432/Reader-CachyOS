@@ -31,6 +31,9 @@ ReadingView::ReadingView(QWidget *parent)
 {
     setFocusPolicy(Qt::StrongFocus);
     setAcceptDrops(true);
+    m_autoPageTimer = new QTimer(this);
+    m_autoPageTimer->setInterval(m_behavior.autoPageIntervalMs);
+    connect(m_autoPageTimer, &QTimer::timeout, this, &ReadingView::onAutoPageTick);
 }
 
 void ReadingView::setBook(std::shared_ptr<Book> book)
@@ -135,6 +138,7 @@ void ReadingView::paintEvent(QPaintEvent *)
                              QColor(0xFF, 0xE0, 0x66));
         }
     }
+    applyTagHighlight(painter, content, from);
     painter.setPen(QColor(128, 128, 128));
     painter.drawText(rect().adjusted(0, 0, -12, -8), Qt::AlignRight | Qt::AlignBottom,
                      QStringLiteral("%1 / %2").arg(m_page.currentPage() + 1).arg(m_page.pageCount()));
@@ -284,6 +288,88 @@ void ReadingView::jumpToBookProgress(qreal progress)
     m_page.jumpToProgress(frac);
     emit pageChanged(m_page.currentPage());
     update();
+}
+
+int ReadingView::tagCount() const
+{
+    int n = 0;
+    for (const TagItem &t : m_tags) {
+        if (t.enabled)
+            ++n;
+    }
+    return n;
+}
+
+void ReadingView::onAutoPageTick()
+{
+    const bool advanced = m_behavior.autoPageScrollMode
+        ? m_page.scrollDown()
+        : m_page.nextPage();
+    if (advanced) {
+        emit pageChanged(m_page.currentPage());
+        update();
+    }
+}
+
+void ReadingView::startAutoPage()
+{
+    if (!m_autoPageTimer)
+        return;
+    m_autoPageTimer->setInterval(m_behavior.autoPageIntervalMs);
+    m_autoPageTimer->start();
+}
+
+void ReadingView::stopAutoPage()
+{
+    if (m_autoPageTimer)
+        m_autoPageTimer->stop();
+}
+
+void ReadingView::toggleAutoPage()
+{
+    if (isAutoPaging())
+        stopAutoPage();
+    else
+        startAutoPage();
+}
+
+void ReadingView::applyTagHighlight(QPainter &painter, const PageContent &content, int fromIndex)
+{
+    if (m_tags.isEmpty() || !m_hasBook)
+        return;
+    const QString text = m_book->chapterText(m_chapter);
+    for (const TagItem &tag : m_tags) {
+        if (!tag.enabled || tag.keyword.isEmpty())
+            continue;
+        const QColor bg = tag.bg.isValid() ? tag.bg : QColor(0xFF, 0xE0, 0x66);
+        QList<int> hits;
+        int idx = 0;
+        while ((idx = text.indexOf(tag.keyword, idx)) >= 0) {
+            hits.append(idx);
+            idx += tag.keyword.size();
+        }
+        if (hits.isEmpty())
+            continue;
+        for (int i = fromIndex; i < content.paragraphIndex.size(); ++i) {
+            const QPair<int, int> range = content.lineCharRange.at(i);
+            for (const int h : hits) {
+                if (h >= range.second || h + tag.keyword.size() <= range.first)
+                    continue;
+                const QTextLayout &layout = m_page.paragraph(content.paragraphIndex.at(i));
+                const QTextLine line = layout.lineAt(content.lineIndex.at(i));
+                const int len = line.textLength();
+                const int p1 = qBound(0, h - range.first, len);
+                const int p2 = qBound(0, h + tag.keyword.size() - range.first, len);
+                if (p2 <= p1)
+                    continue;
+                const qreal x1 = line.cursorToX(p1);
+                const qreal x2 = line.cursorToX(p2);
+                painter.fillRect(QRectF(content.positions.at(i).x() + x1,
+                                        content.positions.at(i).y(),
+                                        x2 - x1, line.height()), bg);
+            }
+        }
+    }
 }
 
 }

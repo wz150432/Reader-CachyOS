@@ -46,6 +46,9 @@ public:
     int lineOffset() const { return m_lineOffset; }
     void resetLineOffset() { m_lineOffset = 0; }
     int linesOnCurrentPage() const { return m_pages.isEmpty() ? 0 : m_pages.at(m_current).paragraphIndex.size(); }
+    void setScrollStep(int step) { m_scrollStep = qMax(1, step); }
+    bool scrollDown() { return scrollLines(m_scrollStep); }
+    bool scrollUp() { return scrollLines(-m_scrollStep); }
     bool goToPage(int page);
     bool nextPage();
     bool prevPage();
@@ -71,6 +74,7 @@ private:
     std::vector<std::pair<int, int>> m_paragraphInfo; // (章节内源字符起点, 首行缩进字符数)
     int m_current = 0;
     int m_lineOffset = 0;
+    int m_scrollStep = 1;
     QVector<QPair<int, int>> m_pageCharRange;
 };
 

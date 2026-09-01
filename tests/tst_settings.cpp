@@ -21,7 +21,7 @@ void TestSettings::defaultsWhenMissing()
     s.load();
     QCOMPARE(s.display.font.family(), QStringLiteral("Noto Sans CJK SC"));
     QCOMPARE(s.display.lineGap, 4);
-    QCOMPARE(s.display.bgColor, QColor(0xF7, 0xF0, 0xE2));
+    QCOMPARE(s.display.bgColor, QColor(Qt::white));
     QVERIFY(s.display.wordWrap);
 }
 

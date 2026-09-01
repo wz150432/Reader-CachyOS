@@ -21,7 +21,7 @@ struct PageLayoutParams
     bool firstLineIndent = true;
     bool compressBlankLines = false;
     bool wordWrap = true;
-    QColor bgColor{QColor(0xF7, 0xF0, 0xE2)};
+    QColor bgColor{Qt::white};
     int margin = 24;
 };
 

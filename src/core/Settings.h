@@ -12,7 +12,7 @@ struct DisplaySettings
     QFont titleFont{QStringLiteral("Noto Sans CJK SC"), 15};
     bool useSameFont = false;
     QColor textColor{QColor(0x33, 0x33, 0x33)};
-    QColor bgColor{QColor(0xF7, 0xF0, 0xE2)};
+    QColor bgColor{Qt::white};
     int lineGap = 4;
     int paragraphGap = 8;
     bool firstLineIndent = true;

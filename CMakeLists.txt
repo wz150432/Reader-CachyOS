@@ -15,6 +15,8 @@ qt_add_executable(reader
     src/app/SettingsDialog.cpp src/app/SettingsDialog.h
     src/app/KeysetDialog.cpp src/app/KeysetDialog.h
     src/app/BookmarkDialog.cpp src/app/BookmarkDialog.h
+    src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
+    src/app/TagsetDialog.cpp src/app/TagsetDialog.h
 )
 target_include_directories(reader PRIVATE src)
 target_link_libraries(reader PRIVATE reader_core Qt6::Widgets)

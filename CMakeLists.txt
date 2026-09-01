@@ -81,6 +81,8 @@ qt_add_executable(tst_mainwindow
     src/app/ReadingView.cpp src/app/ReadingView.h
     src/app/KeysetDialog.cpp src/app/KeysetDialog.h
     src/app/BookmarkDialog.cpp src/app/BookmarkDialog.h
+    src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
+    src/app/TagsetDialog.cpp src/app/TagsetDialog.h
 )
 target_include_directories(tst_mainwindow PRIVATE src)
 target_link_libraries(tst_mainwindow PRIVATE reader_core Qt6::Test Qt6::Widgets)
@@ -123,6 +125,8 @@ qt_add_executable(tst_mainwindow2
     src/app/SettingsDialog.cpp src/app/SettingsDialog.h
     src/app/KeysetDialog.cpp src/app/KeysetDialog.h
     src/app/BookmarkDialog.cpp src/app/BookmarkDialog.h
+    src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
+    src/app/TagsetDialog.cpp src/app/TagsetDialog.h
 )
 target_include_directories(tst_mainwindow2 PRIVATE src)
 target_link_libraries(tst_mainwindow2 PRIVATE reader_core Qt6::Test Qt6::Widgets)
@@ -156,3 +160,18 @@ target_include_directories(tst_tags PRIVATE src)
 target_link_libraries(tst_tags PRIVATE reader_core Qt6::Test Qt6::Widgets)
 add_test(NAME tags COMMAND tst_tags)
 set_tests_properties(tags PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_window
+    tests/tst_window.cpp
+    src/app/MainWindow.cpp src/app/MainWindow.h
+    src/app/ReadingView.cpp src/app/ReadingView.h
+    src/app/SettingsDialog.cpp src/app/SettingsDialog.h
+    src/app/KeysetDialog.cpp src/app/KeysetDialog.h
+    src/app/BookmarkDialog.cpp src/app/BookmarkDialog.h
+    src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
+    src/app/TagsetDialog.cpp src/app/TagsetDialog.h
+)
+target_include_directories(tst_window PRIVATE src)
+target_link_libraries(tst_window PRIVATE reader_core Qt6::Test Qt6::Widgets)
+add_test(NAME window COMMAND tst_window)
+set_tests_properties(window PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

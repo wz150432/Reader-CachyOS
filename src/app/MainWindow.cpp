@@ -1,8 +1,10 @@
 #include "app/MainWindow.h"
+#include "app/BasicSettingsDialog.h"
 #include "app/BookmarkDialog.h"
 #include "app/KeysetDialog.h"
 #include "app/ReadingView.h"
 #include "app/SettingsDialog.h"
+#include "app/TagsetDialog.h"
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QDialogButtonBox>
@@ -10,9 +12,11 @@
 #include <QFileDialog>
 #include <QKeySequence>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QSpinBox>
+#include <QSystemTrayIcon>
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -28,6 +32,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_view->setObjectName(QStringLiteral("readingView"));
     m_view->setSettings(m_settings.display);
     m_view->setKeyset(m_settings.keyset);
+    m_view->setBehavior(m_settings.behavior);
+    m_view->setTags(m_settings.tags);
     setCentralWidget(m_view);
     connect(m_view, &ReadingView::chapterChanged, this, &MainWindow::onChapterChanged);
     connect(m_view, &ReadingView::pageChanged, this, &MainWindow::onPageChanged);
@@ -60,6 +66,7 @@ MainWindow::MainWindow(QWidget *parent)
     buildMenus();
     updateTitle();
     resize(960, 720);
+    createTrayIcon();
 }
 
 void MainWindow::buildMenus()
@@ -103,10 +110,17 @@ void MainWindow::buildMenus()
         if (dlg.exec() == QDialog::Accepted) {
             m_view->setSettings(m_settings.display);
             m_view->refreshLayout();
-            setWindowOpacity(m_settings.display.windowAlpha / 255.0);
+            applyWindowOpacity();
         }
     });
-    settings->addAction(QStringLiteral("基本设置"))->setEnabled(false);
+    QAction *basicAction = settings->addAction(QStringLiteral("基本设置"));
+    connect(basicAction, &QAction::triggered, this, [this] {
+        BasicSettingsDialog dlg(&m_settings, this);
+        if (dlg.exec() == QDialog::Accepted) {
+            m_view->setBehavior(m_settings.behavior);
+            applyWindowOpacity();
+        }
+    });
     settings->addAction(QStringLiteral("高级设置"))->setEnabled(false);
     QAction *keysetAction = settings->addAction(QStringLiteral("按键设置"));
     connect(keysetAction, &QAction::triggered, this, [this] {
@@ -114,8 +128,29 @@ void MainWindow::buildMenus()
         if (dlg.exec() == QDialog::Accepted)
             applyKeyset();
     });
-    settings->addAction(QStringLiteral("标签设置"))->setEnabled(false);
+    QAction *tagsetAction = settings->addAction(QStringLiteral("标签设置"));
+    connect(tagsetAction, &QAction::triggered, this, [this] {
+        TagsetDialog dlg(&m_settings, this);
+        if (dlg.exec() == QDialog::Accepted)
+            m_view->setTags(m_settings.tags);
+    });
     settings->addSeparator();
+    QMenu *windowMenu = menuBar()->addMenu(QStringLiteral("窗口(&W)"));
+    QAction *fullAction = windowMenu->addAction(QStringLiteral("全屏"));
+    fullAction->setShortcut(m_settings.keyset.shortcut(KeyAction::Fullscreen));
+    connect(fullAction, &QAction::triggered, this, &MainWindow::toggleFullscreen);
+    QAction *topAction = windowMenu->addAction(QStringLiteral("窗口置顶"));
+    topAction->setShortcut(m_settings.keyset.shortcut(KeyAction::AlwaysOnTop));
+    connect(topAction, &QAction::triggered, this, &MainWindow::toggleAlwaysOnTop);
+    QAction *borderAction = windowMenu->addAction(QStringLiteral("隐藏边框"));
+    borderAction->setShortcut(m_settings.keyset.shortcut(KeyAction::HideBorder));
+    connect(borderAction, &QAction::triggered, this, &MainWindow::toggleHideBorder);
+    QAction *hideAction = windowMenu->addAction(QStringLiteral("隐藏窗口"));
+    hideAction->setShortcut(m_settings.keyset.shortcut(KeyAction::HideWindow));
+    connect(hideAction, &QAction::triggered, this, &MainWindow::showHideWindow);
+    QAction *autoPageAction = windowMenu->addAction(QStringLiteral("自动翻页"));
+    autoPageAction->setShortcut(m_settings.keyset.shortcut(KeyAction::AutoPage));
+    connect(autoPageAction, &QAction::triggered, this, &MainWindow::toggleAutoPage);
     QAction *resetAction = settings->addAction(QStringLiteral("还原默认设置"));
     connect(resetAction, &QAction::triggered, this, [this] {
         if (QMessageBox::question(this, QStringLiteral("还原默认设置"),
@@ -155,7 +190,7 @@ void MainWindow::openBook(const QString &path)
     updateTitle();
     m_view->setFocus();
     m_view->setKeyset(m_settings.keyset);
-    setWindowOpacity(m_settings.display.windowAlpha / 255.0);
+    applyWindowOpacity();
 }
 
 void MainWindow::populateToc()
@@ -253,7 +288,7 @@ void MainWindow::onDisplaySettingsChanged(const DisplaySettings &settings)
 {
     m_settings.display = settings;
     m_settings.save();
-    setWindowOpacity(settings.windowAlpha / 255.0);
+    applyWindowOpacity();
 }
 
 void MainWindow::applyKeyset()
@@ -270,11 +305,15 @@ void MainWindow::resetSettings()
     Settings fresh;
     m_settings.display = fresh.display;
     m_settings.keyset.reset();
+    m_settings.behavior = fresh.behavior;
+    m_settings.tags = fresh.tags;
     m_settings.save();
     m_view->setSettings(m_settings.display);
     m_view->setKeyset(m_settings.keyset);
+    m_view->setBehavior(m_settings.behavior);
+    m_view->setTags(m_settings.tags);
     applyKeyset();
-    setWindowOpacity(m_settings.display.windowAlpha / 255.0);
+    applyWindowOpacity();
 }
 
 void MainWindow::updateTitle()
@@ -313,9 +352,75 @@ int MainWindow::currentChapter() const
     return m_view->currentChapter();
 }
 
+void MainWindow::showHideWindow()
+{
+    if (isVisible())
+        hide();
+    else
+        show();
+}
+
+void MainWindow::toggleFullscreen()
+{
+    if (isFullScreen())
+        showNormal();
+    else
+        showFullScreen();
+}
+
+void MainWindow::toggleAlwaysOnTop()
+{
+    setWindowFlag(Qt::WindowStaysOnTopHint, !(windowFlags() & Qt::WindowStaysOnTopHint));
+    show();
+}
+
+void MainWindow::toggleHideBorder()
+{
+    setWindowFlag(Qt::FramelessWindowHint, !(windowFlags() & Qt::FramelessWindowHint));
+    show();
+}
+
+void MainWindow::toggleAutoPage()
+{
+    m_view->toggleAutoPage();
+}
+
+bool MainWindow::autoPageActive() const
+{
+    return m_view->isAutoPaging();
+}
+
+void MainWindow::createTrayIcon()
+{
+    if (!QSystemTrayIcon::isSystemTrayAvailable())
+        return;
+    m_tray = new QSystemTrayIcon(this);
+    m_tray->setToolTip(QStringLiteral("Reader"));
+    auto *menu = new QMenu(this);
+    menu->addAction(QStringLiteral("显示/隐藏"), this, &MainWindow::showHideWindow);
+    menu->addAction(QStringLiteral("退出"), this, &QWidget::close);
+    m_tray->setContextMenu(menu);
+    connect(m_tray, &QSystemTrayIcon::activated, this,
+            [this](QSystemTrayIcon::ActivationReason r) {
+                if (r == QSystemTrayIcon::Trigger)
+                    showHideWindow();
+            });
+    m_tray->show();
+}
+
+void MainWindow::applyWindowOpacity()
+{
+    setWindowOpacity(m_settings.display.windowAlpha / 255.0);
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     saveProgress();
+    if (m_settings.behavior.minimizeToTray && m_tray && m_tray->isVisible()) {
+        event->ignore();
+        hide();
+        return;
+    }
     QMainWindow::closeEvent(event);
 }
 

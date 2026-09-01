@@ -7,6 +7,7 @@
 
 class QTreeWidget;
 class QLineEdit;
+class QSystemTrayIcon;
 
 namespace reader {
 
@@ -23,6 +24,13 @@ public:
     void addBookmarkForCurrentBook();
     void resetSettings();
     int currentChapter() const;
+    void showHideWindow();
+    void toggleFullscreen();
+    void toggleAlwaysOnTop();
+    void toggleHideBorder();
+    void toggleAutoPage();
+    bool autoPageActive() const;
+    bool windowHiddenForTest() const { return !isVisible(); }
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -42,9 +50,12 @@ private:
     void saveProgress();
     void openBookmarkList();
     void applyKeyset();
+    void createTrayIcon();
+    void applyWindowOpacity();
     ReadingView *m_view = nullptr;
     QTreeWidget *m_toc = nullptr;
     QLineEdit *m_searchEdit = nullptr;
+    QSystemTrayIcon *m_tray = nullptr;
     Cache m_cache;
     Settings m_settings;
     std::shared_ptr<Book> m_book;

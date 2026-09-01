@@ -100,7 +100,7 @@ struct PageLayoutParams {
     QColor bgColor{QColor(0xF7, 0xF0, 0xE2)};
     int margin = 24;
 };
-struct PageContent { QVector<QTextLayout> layouts; QVector<QPointF> positions; qreal lineHeight = 0; };
+struct PageContent { QVector<int> paragraphIndex; QVector<int> lineIndex; QVector<QPointF> positions; qreal lineHeight = 0; };
 class Page {
 public:
     void setParams(const PageLayoutParams &params);
@@ -114,12 +114,15 @@ public:
     qreal progress() const;
     void jumpToProgress(qreal p);
     const PageContent &content(int page) const { return m_pages.at(page); }
+    int lineCount(int page) const { return m_pages.at(page).paragraphIndex.size(); }
+    const QTextLayout &paragraph(int index) const { return *m_paragraphs.at(index); }
 private:
     void repaginate();
     int m_viewWidth = 0, m_viewHeight = 0;
     PageLayoutParams m_params;
     QString m_text;
     QVector<PageContent> m_pages;
+    std::vector<std::unique_ptr<QTextLayout>> m_paragraphs;
     int m_current = 0;
 };
 }
@@ -1181,7 +1184,7 @@ void TestPage::singlePage()
     page.setViewSize(800, 1000);
     page.setText(QStringLiteral("第一章 测试\n内容一\n内容二"));
     QCOMPARE(page.pageCount(), 1);
-    QVERIFY(page.content(0).layouts.size() >= 3);
+    QVERIFY(page.lineCount(0) >= 3);
 }
 
 void TestPage::multiplePages()
@@ -2355,11 +2358,9 @@ void ReadingView::paintEvent(QPaintEvent *)
     }
     painter.setPen(m_settings.textColor);
     const PageContent &content = m_page.content(m_page.currentPage());
-    for (int i = 0; i < content.layouts.size(); ++i) {
-        painter.save();
-        painter.translate(content.positions.at(i));
-        content.layouts.at(i).draw(&painter, QPointF(0, 0));
-        painter.restore();
+    for (int i = 0; i < content.paragraphIndex.size(); ++i) {
+        const QTextLayout &layout = m_page.paragraph(content.paragraphIndex.at(i));
+        layout.lineAt(content.lineIndex.at(i)).draw(&painter, content.positions.at(i));
     }
     painter.setPen(QColor(128, 128, 128));
     painter.drawText(rect().adjusted(0, 0, -12, -8), Qt::AlignRight | Qt::AlignBottom,

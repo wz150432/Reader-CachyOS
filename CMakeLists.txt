@@ -27,6 +27,7 @@ add_library(reader_core STATIC
     src/core/Page.cpp src/core/Page.h
     src/core/Settings.cpp src/core/Settings.h
     src/core/Cache.cpp src/core/Cache.h
+    src/core/Keyset.cpp src/core/Keyset.h
 )
 target_include_directories(reader_core PUBLIC src)
 target_link_libraries(reader_core PUBLIC Qt6::Core Qt6::Gui)
@@ -79,3 +80,8 @@ target_include_directories(tst_mainwindow PRIVATE src)
 target_link_libraries(tst_mainwindow PRIVATE reader_core Qt6::Test Qt6::Widgets)
 add_test(NAME mainwindow COMMAND tst_mainwindow)
 set_tests_properties(mainwindow PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_keyset tests/tst_keyset.cpp)
+target_link_libraries(tst_keyset PRIVATE reader_core Qt6::Test)
+add_test(NAME keyset COMMAND tst_keyset)
+set_tests_properties(keyset PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

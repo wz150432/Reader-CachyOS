@@ -1,14 +1,21 @@
 #include "app/MainWindow.h"
+#include "app/BookmarkDialog.h"
+#include "app/KeysetDialog.h"
 #include "app/ReadingView.h"
 #include "app/SettingsDialog.h"
 #include <QCloseEvent>
 #include <QDateTime>
+#include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QKeySequence>
+#include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QSpinBox>
+#include <QToolBar>
 #include <QTreeWidget>
+#include <QVBoxLayout>
 
 namespace reader {
 
@@ -20,9 +27,14 @@ MainWindow::MainWindow(QWidget *parent)
     m_view = new ReadingView(this);
     m_view->setObjectName(QStringLiteral("readingView"));
     m_view->setSettings(m_settings.display);
+    m_view->setKeyset(m_settings.keyset);
     setCentralWidget(m_view);
     connect(m_view, &ReadingView::chapterChanged, this, &MainWindow::onChapterChanged);
     connect(m_view, &ReadingView::pageChanged, this, &MainWindow::onPageChanged);
+    connect(m_view, &ReadingView::searchRequested, this, &MainWindow::onSearchRequested);
+    connect(m_view, &ReadingView::jumpRequested, this, &MainWindow::onJumpRequested);
+    connect(m_view, &ReadingView::bookmarkRequested, this, &MainWindow::onBookmarkRequested);
+    connect(m_view, &ReadingView::displaySettingsChanged, this, &MainWindow::onDisplaySettingsChanged);
 
     auto *dock = new QDockWidget(QStringLiteral("目录"), this);
     dock->setObjectName(QStringLiteral("tocDock"));
@@ -34,6 +46,17 @@ MainWindow::MainWindow(QWidget *parent)
         m_view->goToChapter(item->data(0, Qt::UserRole).toInt());
     });
 
+    auto *searchBar = addToolBar(QStringLiteral("搜索"));
+    searchBar->setObjectName(QStringLiteral("searchBar"));
+    searchBar->setMovable(false);
+    m_searchEdit = new QLineEdit(searchBar);
+    m_searchEdit->setPlaceholderText(QStringLiteral("搜索当前章节（Enter 下一个，Esc 关闭）"));
+    searchBar->addWidget(m_searchEdit);
+    searchBar->setVisible(false);
+    connect(m_searchEdit, &QLineEdit::returnPressed, this, [this] {
+        m_view->findNext(m_searchEdit->text());
+    });
+
     buildMenus();
     updateTitle();
     resize(960, 720);
@@ -43,6 +66,7 @@ void MainWindow::buildMenus()
 {
     QMenu *file = menuBar()->addMenu(QStringLiteral("文件(&F)"));
     QAction *open = file->addAction(QStringLiteral("打开(&O)"));
+    open->setObjectName(QStringLiteral("actOpen"));
     open->setShortcut(QKeySequence::Open);
     connect(open, &QAction::triggered, this, [this] {
         const QString path = QFileDialog::getOpenFileName(
@@ -55,6 +79,7 @@ void MainWindow::buildMenus()
     clearRecent->setEnabled(false);
     clearRecent->setToolTip(QStringLiteral("第三阶段开放"));
     QAction *quit = file->addAction(QStringLiteral("退出(&X)"));
+    quit->setObjectName(QStringLiteral("actQuit"));
     quit->setShortcut(QKeySequence::Quit);
     connect(quit, &QAction::triggered, this, &QWidget::close);
 
@@ -67,8 +92,9 @@ void MainWindow::buildMenus()
 
     QMenu *bookmark = menuBar()->addMenu(QStringLiteral("书签(&M)"));
     QAction *bm = bookmark->addAction(QStringLiteral("添加书签"));
-    bm->setEnabled(false);
-    bm->setToolTip(QStringLiteral("第二阶段开放"));
+    connect(bm, &QAction::triggered, this, &MainWindow::onBookmarkRequested);
+    QAction *bmList = bookmark->addAction(QStringLiteral("书签列表"));
+    connect(bmList, &QAction::triggered, this, &MainWindow::openBookmarkList);
 
     QMenu *settings = menuBar()->addMenu(QStringLiteral("设置(&S)"));
     QAction *display = settings->addAction(QStringLiteral("显示设置"));
@@ -77,14 +103,26 @@ void MainWindow::buildMenus()
         if (dlg.exec() == QDialog::Accepted) {
             m_view->setSettings(m_settings.display);
             m_view->refreshLayout();
+            setWindowOpacity(m_settings.display.windowAlpha / 255.0);
         }
     });
     settings->addAction(QStringLiteral("基本设置"))->setEnabled(false);
     settings->addAction(QStringLiteral("高级设置"))->setEnabled(false);
-    settings->addAction(QStringLiteral("按键设置"))->setEnabled(false);
+    QAction *keysetAction = settings->addAction(QStringLiteral("按键设置"));
+    connect(keysetAction, &QAction::triggered, this, [this] {
+        KeysetDialog dlg(&m_settings, this);
+        if (dlg.exec() == QDialog::Accepted)
+            applyKeyset();
+    });
     settings->addAction(QStringLiteral("标签设置"))->setEnabled(false);
     settings->addSeparator();
-    settings->addAction(QStringLiteral("还原默认设置"))->setEnabled(false);
+    QAction *resetAction = settings->addAction(QStringLiteral("还原默认设置"));
+    connect(resetAction, &QAction::triggered, this, [this] {
+        if (QMessageBox::question(this, QStringLiteral("还原默认设置"),
+                QStringLiteral("确定恢复所有默认设置？")) != QMessageBox::Yes)
+            return;
+        resetSettings();
+    });
 
     QMenu *help = menuBar()->addMenu(QStringLiteral("帮助(&H)"));
     QAction *about = help->addAction(QStringLiteral("关于 ..."));
@@ -92,8 +130,9 @@ void MainWindow::buildMenus()
         QMessageBox::about(this, QStringLiteral("关于"),
             QStringLiteral("Reader（CachyOS 原生版）\n\n"
                            "本地 TXT/EPUB/MOBI 阅读器，功能参考开源项目 binbyu/Reader。\n"
-                           "本版本为第一阶段：TXT 阅读核心。"));
+                           "本版本：TXT 阅读核心（第二阶段进行中）。"));
     });
+    applyKeyset();
 }
 
 void MainWindow::openBook(const QString &path)
@@ -115,6 +154,8 @@ void MainWindow::openBook(const QString &path)
     }
     updateTitle();
     m_view->setFocus();
+    m_view->setKeyset(m_settings.keyset);
+    setWindowOpacity(m_settings.display.windowAlpha / 255.0);
 }
 
 void MainWindow::populateToc()
@@ -147,6 +188,95 @@ void MainWindow::onPageChanged(int)
     saveProgress();
 }
 
+void MainWindow::onSearchRequested()
+{
+    if (QToolBar *bar = findChild<QToolBar *>(QStringLiteral("searchBar"))) {
+        bar->setVisible(true);
+        m_searchEdit->setFocus();
+        m_searchEdit->selectAll();
+    }
+}
+
+void MainWindow::onJumpRequested()
+{
+    if (!m_book)
+        return;
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("跳转到进度"));
+    auto *spin = new QSpinBox(&dlg);
+    spin->setRange(0, 100);
+    spin->setSuffix(QStringLiteral(" %"));
+    auto *box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    auto *layout = new QVBoxLayout(&dlg);
+    layout->addWidget(spin);
+    layout->addWidget(box);
+    if (dlg.exec() == QDialog::Accepted)
+        m_view->jumpToBookProgress(spin->value() / 100.0);
+}
+
+void MainWindow::onBookmarkRequested()
+{
+    addBookmarkForCurrentBook();
+}
+
+void MainWindow::addBookmarkForCurrentBook()
+{
+    if (m_currentPath.isEmpty() || !m_book)
+        return;
+    const int ci = m_view->currentChapter();
+    QString title;
+    if (ci >= 0 && ci < m_book->chapters().size())
+        title = m_book->chapters().at(ci).title;
+    m_cache.addBookmark({m_currentPath, ci, m_view->currentPage(), title,
+                         QDateTime::currentSecsSinceEpoch()});
+    m_cache.save();
+}
+
+void MainWindow::openBookmarkList()
+{
+    if (m_currentPath.isEmpty())
+        return;
+    const QVector<Bookmark> marks = m_cache.bookmarks(m_currentPath);
+    BookmarkDialog dlg(marks, this);
+    connect(&dlg, &BookmarkDialog::jumpRequested, this, [this, &dlg, marks](int idx) {
+        if (idx >= 0 && idx < marks.size()) {
+            m_view->goToChapter(marks.at(idx).chapterIndex);
+            m_view->goToPage(marks.at(idx).pageIndex);
+        }
+    });
+    dlg.exec();
+}
+
+void MainWindow::onDisplaySettingsChanged(const DisplaySettings &settings)
+{
+    m_settings.display = settings;
+    m_settings.save();
+    setWindowOpacity(settings.windowAlpha / 255.0);
+}
+
+void MainWindow::applyKeyset()
+{
+    m_view->setKeyset(m_settings.keyset);
+    if (QAction *open = findChild<QAction *>(QStringLiteral("actOpen")))
+        open->setShortcut(m_settings.keyset.shortcut(KeyAction::OpenFile));
+    if (QAction *quit = findChild<QAction *>(QStringLiteral("actQuit")))
+        quit->setShortcut(m_settings.keyset.shortcut(KeyAction::Quit));
+}
+
+void MainWindow::resetSettings()
+{
+    Settings fresh;
+    m_settings.display = fresh.display;
+    m_settings.keyset.reset();
+    m_settings.save();
+    m_view->setSettings(m_settings.display);
+    m_view->setKeyset(m_settings.keyset);
+    applyKeyset();
+    setWindowOpacity(m_settings.display.windowAlpha / 255.0);
+}
+
 void MainWindow::updateTitle()
 {
     QString title;
@@ -176,6 +306,11 @@ QString MainWindow::currentBookTitle() const
 int MainWindow::tocItemCount() const
 {
     return m_toc->topLevelItemCount();
+}
+
+int MainWindow::currentChapter() const
+{
+    return m_view->currentChapter();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

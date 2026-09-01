@@ -1,0 +1,72 @@
+#include <QtTest>
+#include <QApplication>
+#include <QTemporaryDir>
+#include <QFile>
+#include "app/MainWindow.h"
+#include "core/Cache.h"
+
+using namespace reader;
+
+class TestMainWindow2 : public QObject
+{
+    Q_OBJECT
+private slots:
+    void addBookmarkPersists();
+    void resetSettingsRestoresDefaults();
+};
+
+static QString makeTxt(const QTemporaryDir &dir, const QString &name)
+{
+    const QString path = dir.filePath(name);
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly))
+        return QString();
+    QString text;
+    for (int i = 0; i < 10; ++i)
+        text += QStringLiteral("第%1章 章节\n正文内容\n").arg(i + 1);
+    f.write(text.toUtf8());
+    f.close();
+    return path;
+}
+
+void TestMainWindow2::addBookmarkPersists()
+{
+    QTemporaryDir dir;
+    MainWindow w;
+    w.show();
+    const QString path = makeTxt(dir, QStringLiteral("book.txt"));
+    w.openBook(path);
+    w.addBookmarkForCurrentBook();
+    QTest::qWait(30);
+    Cache c(Cache::defaultCacheFilePath());
+    c.load();
+    const QVector<Bookmark> marks = c.bookmarks(path);
+    QCOMPARE(marks.size(), 1);
+    QCOMPARE(marks.at(0).chapterIndex, w.currentChapter());
+}
+
+void TestMainWindow2::resetSettingsRestoresDefaults()
+{
+    QTemporaryDir dir;
+    MainWindow w;
+    w.show();
+    w.resetSettings();
+    QTest::qWait(30);
+    Settings s(Settings::defaultConfigFilePath());
+    s.load();
+    QCOMPARE(s.keyset.shortcut(KeyAction::Search), QKeySequence(QStringLiteral("Ctrl+F")));
+    QCOMPARE(s.display.bgColor, QColor(Qt::white));
+}
+
+int main(int argc, char *argv[])
+{
+    QTemporaryDir tmp;
+    qputenv("XDG_DATA_HOME", tmp.path().toUtf8());
+    qputenv("XDG_CONFIG_HOME", tmp.path().toUtf8());
+    QApplication app(argc, argv);
+    TestMainWindow2 tc;
+    QTEST_SET_MAIN_SOURCE_PATH
+    return QTest::qExec(&tc, argc, argv);
+}
+
+#include "tst_mainwindow2.moc"

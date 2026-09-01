@@ -6,6 +6,7 @@
 #include "core/Settings.h"
 
 class QTreeWidget;
+class QLineEdit;
 
 namespace reader {
 
@@ -19,6 +20,9 @@ public:
     void openBook(const QString &path);
     QString currentBookTitle() const;
     int tocItemCount() const;
+    void addBookmarkForCurrentBook();
+    void resetSettings();
+    int currentChapter() const;
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -26,14 +30,21 @@ protected:
 private slots:
     void onChapterChanged(int index);
     void onPageChanged(int index);
+    void onSearchRequested();
+    void onJumpRequested();
+    void onBookmarkRequested();
+    void onDisplaySettingsChanged(const DisplaySettings &settings);
 
 private:
     void buildMenus();
     void populateToc();
     void updateTitle();
     void saveProgress();
+    void openBookmarkList();
+    void applyKeyset();
     ReadingView *m_view = nullptr;
     QTreeWidget *m_toc = nullptr;
+    QLineEdit *m_searchEdit = nullptr;
     Cache m_cache;
     Settings m_settings;
     std::shared_ptr<Book> m_book;

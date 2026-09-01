@@ -30,6 +30,7 @@ struct PageContent
     QVector<int> paragraphIndex; // 段落布局在 Page 中的下标
     QVector<int> lineIndex;      // 该段落内第几行
     QVector<QPointF> positions;
+    QVector<QPair<int, int>> lineCharRange; // 每行在章节源文本中的 [start,end)
     qreal lineHeight = 0;
 };
 
@@ -42,11 +43,19 @@ public:
 
     int pageCount() const { return m_pages.size(); }
     int currentPage() const { return m_current; }
+    int lineOffset() const { return m_lineOffset; }
+    void resetLineOffset() { m_lineOffset = 0; }
+    int linesOnCurrentPage() const { return m_pages.isEmpty() ? 0 : m_pages.at(m_current).paragraphIndex.size(); }
     bool goToPage(int page);
     bool nextPage();
     bool prevPage();
+    bool nextLine();
+    bool prevLine();
+    bool scrollLines(int delta);
     qreal progress() const;
     void jumpToProgress(qreal p);
+    QPair<int, int> charRange(int page) const { return m_pageCharRange.value(page); }
+    int pageForChar(int charPos) const;
     const PageContent &content(int page) const { return m_pages.at(page); }
     int lineCount(int page) const { return m_pages.at(page).paragraphIndex.size(); }
     const QTextLayout &paragraph(int index) const { return *m_paragraphs.at(index); }
@@ -59,7 +68,10 @@ private:
     QString m_text;
     QVector<PageContent> m_pages;
     std::vector<std::unique_ptr<QTextLayout>> m_paragraphs;
+    std::vector<std::pair<int, int>> m_paragraphInfo; // (章节内源字符起点, 首行缩进字符数)
     int m_current = 0;
+    int m_lineOffset = 0;
+    QVector<QPair<int, int>> m_pageCharRange;
 };
 
 }

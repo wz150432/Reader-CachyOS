@@ -90,3 +90,8 @@ qt_add_executable(tst_bookmarks tests/tst_bookmarks.cpp)
 target_link_libraries(tst_bookmarks PRIVATE reader_core Qt6::Test)
 add_test(NAME bookmarks COMMAND tst_bookmarks)
 set_tests_properties(bookmarks PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_page2 tests/tst_page2.cpp)
+target_link_libraries(tst_page2 PRIVATE reader_core Qt6::Test)
+add_test(NAME page2 COMMAND tst_page2)
+set_tests_properties(page2 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

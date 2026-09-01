@@ -85,3 +85,8 @@ qt_add_executable(tst_keyset tests/tst_keyset.cpp)
 target_link_libraries(tst_keyset PRIVATE reader_core Qt6::Test)
 add_test(NAME keyset COMMAND tst_keyset)
 set_tests_properties(keyset PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_bookmarks tests/tst_bookmarks.cpp)
+target_link_libraries(tst_bookmarks PRIVATE reader_core Qt6::Test)
+add_test(NAME bookmarks COMMAND tst_bookmarks)
+set_tests_properties(bookmarks PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

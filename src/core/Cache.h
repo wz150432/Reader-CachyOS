@@ -14,6 +14,15 @@ struct BookProgress
     qint64 lastOpened = 0;
 };
 
+struct Bookmark
+{
+    QString filePath;
+    int chapterIndex = 0;
+    int pageIndex = 0;
+    QString title;
+    qint64 created = 0;
+};
+
 class Cache
 {
 public:
@@ -24,11 +33,15 @@ public:
     std::optional<BookProgress> progress(const QString &filePath) const;
     QStringList recentFiles() const;
     void clearAll();
+    QVector<Bookmark> bookmarks(const QString &filePath) const;
+    void addBookmark(const Bookmark &b);
+    void removeBookmark(const QString &filePath, qint64 created);
     static QString defaultCacheFilePath();
 
 private:
     QString m_path;
     QVector<BookProgress> m_progress;
+    QVector<Bookmark> m_bookmarks;
 };
 
 }

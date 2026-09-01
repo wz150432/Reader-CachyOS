@@ -43,6 +43,18 @@ void Cache::load()
         if (!p.filePath.isEmpty())
             m_progress.append(p);
     }
+    const QJsonArray marks = doc.object().value(QStringLiteral("bookmarks")).toArray();
+    for (const QJsonValue &v : marks) {
+        const QJsonObject o = v.toObject();
+        Bookmark b;
+        b.filePath = o.value(QStringLiteral("file")).toString();
+        b.chapterIndex = o.value(QStringLiteral("chapter")).toInt();
+        b.pageIndex = o.value(QStringLiteral("page")).toInt();
+        b.title = o.value(QStringLiteral("title")).toString();
+        b.created = static_cast<qint64>(o.value(QStringLiteral("created")).toDouble());
+        if (!b.filePath.isEmpty())
+            m_bookmarks.append(b);
+    }
 }
 
 void Cache::save() const
@@ -62,6 +74,17 @@ void Cache::save() const
     }
     QJsonObject root;
     root.insert(QStringLiteral("progress"), arr);
+    QJsonArray marks;
+    for (const Bookmark &b : m_bookmarks) {
+        QJsonObject o;
+        o.insert(QStringLiteral("file"), b.filePath);
+        o.insert(QStringLiteral("chapter"), b.chapterIndex);
+        o.insert(QStringLiteral("page"), b.pageIndex);
+        o.insert(QStringLiteral("title"), b.title);
+        o.insert(QStringLiteral("created"), static_cast<double>(b.created));
+        marks.append(o);
+    }
+    root.insert(QStringLiteral("bookmarks"), marks);
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     f.commit();
 }
@@ -101,6 +124,35 @@ QStringList Cache::recentFiles() const
 void Cache::clearAll()
 {
     m_progress.clear();
+    m_bookmarks.clear();
+}
+
+QVector<Bookmark> Cache::bookmarks(const QString &filePath) const
+{
+    QVector<Bookmark> out;
+    for (const Bookmark &b : m_bookmarks) {
+        if (b.filePath == filePath)
+            out.append(b);
+    }
+    std::stable_sort(out.begin(), out.end(), [](const Bookmark &a, const Bookmark &b) {
+        if (a.chapterIndex != b.chapterIndex)
+            return a.chapterIndex < b.chapterIndex;
+        return a.pageIndex < b.pageIndex;
+    });
+    return out;
+}
+
+void Cache::addBookmark(const Bookmark &b)
+{
+    m_bookmarks.append(b);
+}
+
+void Cache::removeBookmark(const QString &filePath, qint64 created)
+{
+    for (int i = m_bookmarks.size() - 1; i >= 0; --i) {
+        if (m_bookmarks.at(i).filePath == filePath && m_bookmarks.at(i).created == created)
+            m_bookmarks.removeAt(i);
+    }
 }
 
 }

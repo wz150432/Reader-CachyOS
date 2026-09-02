@@ -22,6 +22,8 @@ public:
     void setTags(const QVector<TagItem> &tags) { m_tags = tags; update(); }
     void setSearchWholeBook(bool enabled) { m_searchWholeBook = enabled; }
     bool searchWholeBook() const { return m_searchWholeBook; }
+    void setShowPageIndicator(bool show);
+    bool pageIndicatorVisible() const { return m_showPageIndicator; }
     int tagCount() const;
     void startAutoPage();
     void stopAutoPage();
@@ -105,6 +107,7 @@ private:
     bool m_rightPressed = false;
     bool m_searchWholeBook = false;
     qreal m_pixelOffset = 0.0;
+    bool m_showPageIndicator = true;
 };
 
 }

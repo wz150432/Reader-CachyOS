@@ -3,6 +3,7 @@
 #include <QMenuBar>
 #include <QTemporaryDir>
 #include "app/MainWindow.h"
+#include "app/ReadingView.h"
 
 using namespace reader;
 
@@ -17,6 +18,7 @@ private slots:
     void hideBorderToggle();
     void autopageReflectsSettings();
     void altHShortcutHidesWindow();
+    void dualButtonPressHidesWindow();
 };
 
 void TestWindow::hideAndShow()
@@ -83,6 +85,18 @@ void TestWindow::altHShortcutHidesWindow()
     QVERIFY(!w.isVisible());
     w.show();
     QVERIFY(w.isVisible());
+}
+
+void TestWindow::dualButtonPressHidesWindow()
+{
+    MainWindow w;
+    w.show();
+    auto *view = qobject_cast<ReadingView *>(w.centralWidget());
+    QVERIFY(view);
+    QTest::mousePress(view, Qt::LeftButton);
+    QTest::mousePress(view, Qt::RightButton);
+    QVERIFY(!w.isVisible());
+    w.show();
 }
 
 int main(int argc, char *argv[])

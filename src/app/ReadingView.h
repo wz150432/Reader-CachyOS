@@ -52,6 +52,7 @@ signals:
     void jumpRequested();
     void bookmarkRequested();
     void fileDropRequested(const QString &path);
+    void hideWindowRequested();
     void autoPageRequested();
     void displaySettingsChanged(const reader::DisplaySettings &settings);
     void behaviorChanged(const reader::BehaviorSettings &behavior);
@@ -60,6 +61,7 @@ protected:
     void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
@@ -85,6 +87,8 @@ private:
     bool m_hasBook = false;
     int m_matchStart = -1;
     int m_matchEnd = -1;
+    bool m_leftPressed = false;
+    bool m_rightPressed = false;
 };
 
 }

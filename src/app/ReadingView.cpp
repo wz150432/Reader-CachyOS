@@ -210,6 +210,17 @@ void ReadingView::resizeEvent(QResizeEvent *event)
 
 void ReadingView::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton)
+        m_leftPressed = true;
+    if (event->button() == Qt::RightButton)
+        m_rightPressed = true;
+    if (m_leftPressed && m_rightPressed && m_behavior.doubleClickHide) {
+        m_leftPressed = false;
+        m_rightPressed = false;
+        event->accept();
+        emit hideWindowRequested();
+        return;
+    }
     if (event->button() == Qt::LeftButton && m_page.nextPage()) {
         emit pageChanged(m_page.currentPage());
         update();
@@ -218,6 +229,15 @@ void ReadingView::mousePressEvent(QMouseEvent *event)
         update();
     }
     QWidget::mousePressEvent(event);
+}
+
+void ReadingView::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton)
+        m_leftPressed = false;
+    if (event->button() == Qt::RightButton)
+        m_rightPressed = false;
+    QWidget::mouseReleaseEvent(event);
 }
 
 void ReadingView::dragEnterEvent(QDragEnterEvent *event)

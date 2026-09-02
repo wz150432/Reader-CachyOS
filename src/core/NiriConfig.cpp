@@ -11,6 +11,7 @@ bool patchReaderOpacity(QString *content, double opacity)
         opacityText += QLatin1String(".0");
     QString newBlock = QStringLiteral("window-rule {\n");
     newBlock += QStringLiteral("    match app-id=r\"^reader(\\.desktop)?$\"\n");
+    newBlock += QStringLiteral("    match title=r\".* - Reader$\"\n");
     newBlock += QStringLiteral("    open-floating true\n");
     newBlock += QStringLiteral("    opacity ") + opacityText + QLatin1Char('\n');
     newBlock += QLatin1Char('}');

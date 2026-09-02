@@ -28,6 +28,7 @@ void TestNiriConfig::updatesExistingReaderBlock()
     QVERIFY(content.contains(QStringLiteral("opacity 0.5")));
     QVERIFY(!content.contains(QStringLiteral("opacity 0.6")));
     QVERIFY(content.contains(QStringLiteral("reader(\\.desktop)")));
+    QVERIFY(content.contains(QStringLiteral("match title=r\".* - Reader$\"")));
     // 幂等：再次调用仍只有一行 opacity
     QVERIFY(patchReaderOpacity(&content, 0.25));
     QCOMPARE(content.count(QStringLiteral("opacity ")), 1);

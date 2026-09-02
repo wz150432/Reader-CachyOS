@@ -132,6 +132,16 @@ void Cache::clearRecent()
     m_progress.clear();
 }
 
+void Cache::removeRecentFile(const QString &filePath)
+{
+    m_progress.erase(
+        std::remove_if(m_progress.begin(), m_progress.end(),
+                       [&filePath](const BookProgress &p) {
+                           return p.filePath == filePath;
+                       }),
+        m_progress.end());
+}
+
 QVector<Bookmark> Cache::bookmarks(const QString &filePath) const
 {
     QVector<Bookmark> out;

@@ -37,6 +37,7 @@ public:
     int currentProgressPercent() const;
     bool windowHiddenForTest() const { return !isVisible(); }
     void clearRecentList();
+    void removeRecentFile(const QString &path);
     void handleRemoteCommand(const QString &command);
 
 protected:
@@ -70,6 +71,7 @@ private:
     ReadingView *m_view = nullptr;
     QTreeWidget *m_toc = nullptr;
     QLineEdit *m_searchEdit = nullptr;
+    QMenu *m_deleteRecentMenu = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
     RemoteControl *m_control = nullptr;
     bool m_topHintShown = false;

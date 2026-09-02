@@ -35,6 +35,7 @@ public:
     QStringList recentFiles() const;
     void clearAll();
     void clearRecent();
+    void removeRecentFile(const QString &filePath);
     QVector<Bookmark> bookmarks(const QString &filePath) const;
     void addBookmark(const Bookmark &b);
     void removeBookmark(const QString &filePath, qint64 created);

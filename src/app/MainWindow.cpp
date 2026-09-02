@@ -113,6 +113,8 @@ void MainWindow::buildMenus()
     connect(openMenu, &QMenu::aboutToShow, this, [this, openMenu] {
         populateOpenMenu(openMenu);
     });
+    m_deleteRecentMenu = new QMenu(QStringLiteral("从最近阅读删除"), openMenu);
+    m_deleteRecentMenu->setObjectName(QStringLiteral("deleteRecentMenu"));
     populateOpenMenu(openMenu);
     QAction *clearRecent = file->addAction(QStringLiteral("清空(&C)"));
     clearRecent->setObjectName(QStringLiteral("actClearRecent"));
@@ -253,9 +255,13 @@ void MainWindow::populateOpenMenu(QMenu *menu)
     QAction *header = menu->addAction(QStringLiteral("最近阅读"));
     header->setEnabled(false);
     const QStringList recent = m_cache.recentFiles();
+    if (m_deleteRecentMenu)
+        m_deleteRecentMenu->clear();
     if (recent.isEmpty()) {
         QAction *none = menu->addAction(QStringLiteral("暂无最近阅读"));
         none->setEnabled(false);
+        if (m_deleteRecentMenu)
+            m_deleteRecentMenu->setEnabled(false);
     } else {
         const int count = qMin(recent.size(), 10);
         for (int i = 0; i < count; ++i) {
@@ -267,8 +273,21 @@ void MainWindow::populateOpenMenu(QMenu *menu)
                 openBook(path);
             });
         }
+        if (m_deleteRecentMenu) {
+            m_deleteRecentMenu->setEnabled(true);
+            for (int i = 0; i < count; ++i) {
+                const QString path = recent.at(i);
+                QAction *remove = m_deleteRecentMenu->addAction(QFileInfo(path).fileName());
+                remove->setToolTip(path);
+                connect(remove, &QAction::triggered, this, [this, path] {
+                    removeRecentFile(path);
+                });
+            }
+        }
     }
     menu->addSeparator();
+    if (m_deleteRecentMenu)
+        menu->addMenu(m_deleteRecentMenu);
     QAction *newBook = menu->addAction(QStringLiteral("打开新书..."));
     newBook->setObjectName(QStringLiteral("actOpenNew"));
     connect(newBook, &QAction::triggered, this, &MainWindow::chooseNewBook);
@@ -545,6 +564,13 @@ void MainWindow::saveProgress()
 void MainWindow::clearRecentList()
 {
     m_cache.clearRecent();
+    m_cache.save();
+    refreshOpenMenu();
+}
+
+void MainWindow::removeRecentFile(const QString &path)
+{
+    m_cache.removeRecentFile(path);
     m_cache.save();
     refreshOpenMenu();
 }

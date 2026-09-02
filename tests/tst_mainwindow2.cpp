@@ -26,6 +26,7 @@ private slots:
     void ctrlOShowsOpenMenu();
     void escapeClosesSearchBarAndClearsHighlight();
     void progressPercentReflectsCurrentBookPosition();
+    void removeRecentMenuDeletesSingleBook();
 };
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -208,6 +209,38 @@ void TestMainWindow2::progressPercentReflectsCurrentBookPosition()
     QCOMPARE(w.currentProgressPercent(), 0);
     view->goToChapter(4);
     QVERIFY(w.currentProgressPercent() > 0);
+}
+
+void TestMainWindow2::removeRecentMenuDeletesSingleBook()
+{
+    QTemporaryDir dir;
+    MainWindow w;
+    w.show();
+    const QString first = makeTxt(dir, QStringLiteral("recent_a.txt"));
+    const QString second = makeTxt(dir, QStringLiteral("recent_b.txt"));
+    w.openBook(first);
+    QTest::qWait(30);
+    w.openBook(second);
+    QTest::qWait(30);
+
+    QMenu *deleteMenu = w.findChild<QMenu *>(QStringLiteral("deleteRecentMenu"));
+    QVERIFY(deleteMenu);
+    bool found = false;
+    for (QAction *action : deleteMenu->actions()) {
+        if (action->toolTip() == first) {
+            action->trigger();
+            found = true;
+            break;
+        }
+    }
+    QVERIFY(found);
+    QTest::qWait(30);
+
+    Cache c(Cache::defaultCacheFilePath());
+    c.load();
+    const QStringList recent = c.recentFiles();
+    QVERIFY(recent.contains(second));
+    QVERIFY(!recent.contains(first));
 }
 
 int main(int argc, char *argv[])

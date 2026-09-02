@@ -13,6 +13,7 @@ private slots:
     void recentFilesOrdering();
     void clearAll();
     void clearRecentKeepsBookmarks();
+    void removeRecentFileRemovesOnlyOne();
 };
 
 void TestCache::missingFileIsEmpty()
@@ -92,6 +93,27 @@ void TestCache::clearRecentKeepsBookmarks()
     Cache d(path);
     d.load();
     QVERIFY(!d.progress(QStringLiteral("/books/a.txt")).has_value());
+    QCOMPARE(d.bookmarks(QStringLiteral("/books/a.txt")).size(), 1);
+}
+
+void TestCache::removeRecentFileRemovesOnlyOne()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("cache.json"));
+    Cache c(path);
+    c.load();
+    c.upsertProgress({QStringLiteral("/books/a.txt"), 1, 1, 100});
+    c.upsertProgress({QStringLiteral("/books/b.txt"), 0, 0, 200});
+    c.addBookmark({QStringLiteral("/books/a.txt"), 0, 0, QStringLiteral("标记"), 50});
+    c.save();
+
+    c.removeRecentFile(QStringLiteral("/books/a.txt"));
+    c.save();
+    Cache d(path);
+    d.load();
+    QVERIFY(!d.progress(QStringLiteral("/books/a.txt")).has_value());
+    QVERIFY(d.progress(QStringLiteral("/books/b.txt")).has_value());
+    QCOMPARE(d.recentFiles(), QStringList({QStringLiteral("/books/b.txt")}));
     QCOMPARE(d.bookmarks(QStringLiteral("/books/a.txt")).size(), 1);
 }
 

@@ -29,6 +29,7 @@ namespace reader {
 ReadingView::ReadingView(QWidget *parent)
     : QWidget(parent)
 {
+    setAttribute(Qt::WA_TranslucentBackground, true);
     setFocusPolicy(Qt::StrongFocus);
     setAcceptDrops(true);
     m_autoPageTimer = new QTimer(this);
@@ -144,10 +145,16 @@ void ReadingView::loadChapter()
 void ReadingView::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
+    const qreal bgOpacity = m_settings.windowAlpha / 255.0;
     if (!m_bgPixmap.isNull())
+        painter.setOpacity(bgOpacity);
+    QColor bg = m_settings.bgColor;
+    bg.setAlpha(m_settings.windowAlpha);
+    painter.fillRect(rect(), bg);
+    if (!m_bgPixmap.isNull()) {
         painter.drawPixmap(rect(), m_bgPixmap);
-    else
-        painter.fillRect(rect(), m_settings.bgColor);
+        painter.setOpacity(1.0);
+    }
     if (!m_hasBook || m_page.pageCount() == 0) {
         painter.setPen(QColor(140, 140, 140));
         painter.drawText(rect(), Qt::AlignCenter, QStringLiteral("打开一本 TXT 小说开始阅读（Ctrl+O）"));

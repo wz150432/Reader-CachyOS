@@ -18,6 +18,7 @@ private slots:
     void jumpToBookProgressWholeBook();
     void ctrlWheelAdjustsAlpha();
     void ctrlShiftWheelSnapsAlpha();
+    void translucentBackgroundEnabled();
 };
 
 static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
@@ -154,6 +155,12 @@ void TestReadingView2::ctrlShiftWheelSnapsAlpha()
     QApplication::sendEvent(&view, &down);
     QCOMPARE(spy.count(), 2);
     QCOMPARE(spy.last().at(0).value<DisplaySettings>().windowAlpha, 255);
+}
+
+void TestReadingView2::translucentBackgroundEnabled()
+{
+    ReadingView view;
+    QVERIFY(view.testAttribute(Qt::WA_TranslucentBackground));
 }
 
 QTEST_MAIN(TestReadingView2)

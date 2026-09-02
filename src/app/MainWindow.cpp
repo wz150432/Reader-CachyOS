@@ -543,7 +543,11 @@ void MainWindow::createTrayIcon()
 
 void MainWindow::applyWindowOpacity()
 {
-    setWindowOpacity(m_settings.display.windowAlpha / 255.0);
+    // 窗口本身保持实体，透明只作用于阅读区背景（由 ReadingView 用带 alpha 的背景绘制）
+    setWindowOpacity(1.0);
+    if (!m_view)
+        return;
+    m_view->update();
     if (!QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
         return;
     const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation))
@@ -555,7 +559,8 @@ void MainWindow::applyWindowOpacity()
     const QString content = QString::fromUtf8(f.readAll());
     f.close();
     QString patched = content;
-    if (!reader::patchReaderOpacity(&patched, m_settings.display.windowAlpha / 255.0))
+    // niri 端固定 1.0，保证整窗不被淡出，文字始终不透明
+    if (!reader::patchReaderOpacity(&patched, 1.0))
         return;
     if (patched == content)
         return;

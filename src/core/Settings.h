@@ -52,6 +52,7 @@ public:
     Keyset keyset;
     BehaviorSettings behavior;
     QVector<TagItem> tags;
+    QString chapterRegex;
     void load();
     void save() const;
     static QString defaultConfigFilePath();

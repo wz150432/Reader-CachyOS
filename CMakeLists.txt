@@ -16,6 +16,7 @@ qt_add_executable(reader
     src/app/KeysetDialog.cpp src/app/KeysetDialog.h
     src/app/BookmarkDialog.cpp src/app/BookmarkDialog.h
     src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
+    src/app/AdvancedSettingsDialog.cpp src/app/AdvancedSettingsDialog.h
     src/app/TagsetDialog.cpp src/app/TagsetDialog.h
 )
 target_include_directories(reader PRIVATE src)
@@ -83,6 +84,7 @@ qt_add_executable(tst_mainwindow
     src/app/KeysetDialog.cpp src/app/KeysetDialog.h
     src/app/BookmarkDialog.cpp src/app/BookmarkDialog.h
     src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
+    src/app/AdvancedSettingsDialog.cpp src/app/AdvancedSettingsDialog.h
     src/app/TagsetDialog.cpp src/app/TagsetDialog.h
 )
 target_include_directories(tst_mainwindow PRIVATE src)
@@ -136,6 +138,7 @@ qt_add_executable(tst_mainwindow2
     src/app/KeysetDialog.cpp src/app/KeysetDialog.h
     src/app/BookmarkDialog.cpp src/app/BookmarkDialog.h
     src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
+    src/app/AdvancedSettingsDialog.cpp src/app/AdvancedSettingsDialog.h
     src/app/TagsetDialog.cpp src/app/TagsetDialog.h
 )
 target_include_directories(tst_mainwindow2 PRIVATE src)
@@ -179,6 +182,7 @@ qt_add_executable(tst_window
     src/app/KeysetDialog.cpp src/app/KeysetDialog.h
     src/app/BookmarkDialog.cpp src/app/BookmarkDialog.h
     src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
+    src/app/AdvancedSettingsDialog.cpp src/app/AdvancedSettingsDialog.h
     src/app/TagsetDialog.cpp src/app/TagsetDialog.h
 )
 target_include_directories(tst_window PRIVATE src)

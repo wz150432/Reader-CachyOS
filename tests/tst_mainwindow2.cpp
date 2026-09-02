@@ -50,6 +50,10 @@ void TestMainWindow2::addBookmarkPersists()
 void TestMainWindow2::resetSettingsRestoresDefaults()
 {
     QTemporaryDir dir;
+    Settings seed(Settings::defaultConfigFilePath());
+    seed.load();
+    seed.chapterRegex = QStringLiteral("^自定义章节$");
+    seed.save();
     MainWindow w;
     w.show();
     w.resetSettings();
@@ -58,6 +62,7 @@ void TestMainWindow2::resetSettingsRestoresDefaults()
     s.load();
     QCOMPARE(s.keyset.shortcut(KeyAction::Search), QKeySequence(QStringLiteral("Ctrl+F")));
     QCOMPARE(s.display.bgColor, QColor(Qt::white));
+    QVERIFY(s.chapterRegex.isEmpty());
 }
 
 void TestMainWindow2::clearRecentMenuClearsRecentList()

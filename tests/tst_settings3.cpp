@@ -11,6 +11,7 @@ private slots:
     void behaviorRoundtrip();
     void tagsRoundtrip();
     void defaultsFilled();
+    void advancedRegexRoundtrip();
 };
 
 void TestSettings3::behaviorRoundtrip()
@@ -59,6 +60,20 @@ void TestSettings3::defaultsFilled()
     QCOMPARE(s.behavior.scrollStep, 1);
     QVERIFY(!s.behavior.minimizeToTray);
     QVERIFY(s.tags.isEmpty());
+    QVERIFY(s.chapterRegex.isEmpty());
+}
+
+void TestSettings3::advancedRegexRoundtrip()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("config.json"));
+    Settings s(path);
+    s.load();
+    s.chapterRegex = QStringLiteral("^第[0-9]+章 .*$");
+    s.save();
+    Settings t(path);
+    t.load();
+    QCOMPARE(t.chapterRegex, QStringLiteral("^第[0-9]+章 .*$"));
 }
 
 QTEST_APPLESS_MAIN(TestSettings3)

@@ -4,12 +4,14 @@
 
 namespace reader {
 
-std::shared_ptr<Book> Book::create(const QString &filePath, QString *error)
+std::shared_ptr<Book> Book::create(
+    const QString &filePath, QString *error,
+    const QRegularExpression &chapterRegex)
 {
     const QString ext = QFileInfo(filePath).suffix().toLower();
     if (ext == QStringLiteral("txt")) {
         auto book = std::make_shared<TextBook>();
-        if (!book->open(filePath, error))
+        if (!book->open(filePath, error, chapterRegex))
             return nullptr;
         return book;
     }

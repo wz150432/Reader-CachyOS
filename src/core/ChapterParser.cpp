@@ -87,7 +87,9 @@ QVector<Chapter> ChapterParser::parseDefault(const QString &text)
 QVector<Chapter> ChapterParser::parseRegex(const QString &text, const QRegularExpression &re)
 {
     QVector<Chapter> chapters;
-    QRegularExpressionMatchIterator it = re.globalMatch(text);
+    QRegularExpression multiline = re;
+    multiline.setPatternOptions(re.patternOptions() | QRegularExpression::MultilineOption);
+    QRegularExpressionMatchIterator it = multiline.globalMatch(text);
     while (it.hasNext()) {
         const QRegularExpressionMatch m = it.next();
         Chapter ch;

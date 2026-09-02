@@ -4,7 +4,8 @@
 
 namespace reader {
 
-bool TextBook::open(const QString &filePath, QString *error)
+bool TextBook::open(const QString &filePath, QString *error,
+                    const QRegularExpression &chapterRegex)
 {
     QFile f(filePath);
     if (!f.open(QIODevice::ReadOnly)) {
@@ -22,7 +23,9 @@ bool TextBook::open(const QString &filePath, QString *error)
     m_filePath = filePath;
     m_encoding = r.encoding;
     m_text = r.text;
-    m_chapters = ChapterParser::parseDefault(m_text);
+    m_chapters = (chapterRegex.isValid() && !chapterRegex.pattern().isEmpty())
+        ? ChapterParser::parseRegex(m_text, chapterRegex)
+        : ChapterParser::parseDefault(m_text);
     if (m_chapters.isEmpty()) {
         Chapter ch;
         ch.title = QFileInfo(filePath).completeBaseName();

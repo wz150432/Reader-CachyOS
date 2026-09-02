@@ -1,4 +1,5 @@
 #include "app/MainWindow.h"
+#include "app/AdvancedSettingsDialog.h"
 #include "app/BasicSettingsDialog.h"
 #include "app/BookmarkDialog.h"
 #include "app/KeysetDialog.h"
@@ -24,6 +25,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSpinBox>
 #include <QStandardPaths>
@@ -140,7 +142,11 @@ void MainWindow::buildMenus()
             applyWindowOpacity();
         }
     });
-    settings->addAction(QStringLiteral("高级设置"))->setEnabled(false);
+    QAction *advancedAction = settings->addAction(QStringLiteral("高级设置"));
+    connect(advancedAction, &QAction::triggered, this, [this] {
+        AdvancedSettingsDialog dlg(&m_settings, this);
+        dlg.exec();
+    });
     QAction *keysetAction = settings->addAction(QStringLiteral("按键设置"));
     connect(keysetAction, &QAction::triggered, this, [this] {
         KeysetDialog dlg(&m_settings, this);
@@ -187,7 +193,7 @@ void MainWindow::buildMenus()
 void MainWindow::openBook(const QString &path)
 {
     QString err;
-    auto book = Book::create(path, &err);
+    auto book = Book::create(path, &err, QRegularExpression(m_settings.chapterRegex));
     if (!book) {
         QMessageBox::warning(this, QStringLiteral("无法打开"), err);
         return;
@@ -416,6 +422,7 @@ void MainWindow::resetSettings()
     m_settings.keyset.reset();
     m_settings.behavior = fresh.behavior;
     m_settings.tags = fresh.tags;
+    m_settings.chapterRegex = fresh.chapterRegex;
     m_settings.save();
     m_view->setSettings(m_settings.display);
     m_view->setKeyset(m_settings.keyset);

@@ -1,13 +1,15 @@
 #pragma once
 #include "core/Book.h"
 #include "core/TextCodec.h"
+#include <QRegularExpression>
 
 namespace reader {
 
 class TextBook final : public Book
 {
 public:
-    bool open(const QString &filePath, QString *error = nullptr) override;
+    bool open(const QString &filePath, QString *error = nullptr,
+              const QRegularExpression &chapterRegex = QRegularExpression()) override;
     QString title() const override;
     const QVector<Chapter> &chapters() const override { return m_chapters; }
     QString chapterText(int chapterIndex) const override;

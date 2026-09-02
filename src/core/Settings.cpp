@@ -33,6 +33,10 @@ void Settings::load()
     keyset.load(doc.object().value(QStringLiteral("keys")).toObject());
     behavior = readBehavior(doc.object().value(QStringLiteral("behavior")).toObject());
     tags = readTags(doc.object().value(QStringLiteral("tags")).toArray());
+    chapterRegex = doc.object().value(QStringLiteral("advanced"))
+                       .toObject()
+                       .value(QStringLiteral("chapter_regex"))
+                       .toString();
 }
 
 void Settings::save() const
@@ -46,6 +50,9 @@ void Settings::save() const
     root.insert(QStringLiteral("keys"), keyset.save());
     root.insert(QStringLiteral("behavior"), writeBehavior());
     root.insert(QStringLiteral("tags"), writeTags());
+    QJsonObject advanced;
+    advanced.insert(QStringLiteral("chapter_regex"), chapterRegex);
+    root.insert(QStringLiteral("advanced"), advanced);
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     f.commit();
 }

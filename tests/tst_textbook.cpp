@@ -15,6 +15,7 @@ private slots:
     void chapterTextSlices();
     void noChaptersYieldsWholeText();
     void factoryTxtOnly();
+    void factoryAppliesCustomRegex();
 };
 
 static QString writeTemp(const QTemporaryDir &dir, const QString &name, const QByteArray &bytes)
@@ -83,6 +84,21 @@ void TestTextBook::factoryTxtOnly()
     auto badBook = Book::create(bad, &err);
     QVERIFY(!badBook);
     QVERIFY(!err.isEmpty());
+}
+
+void TestTextBook::factoryAppliesCustomRegex()
+{
+    QTemporaryDir dir;
+    const QString path = writeTemp(dir, "parts.txt",
+        QStringLiteral("PART 1 开端\n正文一\nPART 2 发展\n正文二\n尾声\n").toUtf8());
+    QString err;
+    auto book = Book::create(path, &err,
+        QRegularExpression(QStringLiteral("^PART [0-9]+ .*$")));
+    QVERIFY(book);
+    QCOMPARE(book->chapters().size(), 2);
+    QCOMPARE(book->chapters().at(0).title, QStringLiteral("PART 1 开端"));
+    QCOMPARE(book->chapters().at(1).title, QStringLiteral("PART 2 发展"));
+    QVERIFY(book->chapterText(0).contains(QStringLiteral("正文一")));
 }
 
 QTEST_APPLESS_MAIN(TestTextBook)

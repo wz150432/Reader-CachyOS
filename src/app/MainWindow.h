@@ -34,6 +34,7 @@ public:
     void toggleHideBorder();
     void toggleAutoPage();
     bool autoPageActive() const;
+    int currentProgressPercent() const;
     bool windowHiddenForTest() const { return !isVisible(); }
     void clearRecentList();
     void handleRemoteCommand(const QString &command);
@@ -57,6 +58,7 @@ private:
     void refreshOpenMenu();
     void showOpenMenu();
     void chooseNewBook();
+    void closeSearchBar();
     void updateTitle();
     void saveProgress();
     void openBookmarkList();

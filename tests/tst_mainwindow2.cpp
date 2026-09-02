@@ -5,6 +5,9 @@
 #include <QTemporaryDir>
 #include <QFile>
 #include <QMenu>
+#include <QLineEdit>
+#include <QToolBar>
+#include "app/ReadingView.h"
 #include "app/MainWindow.h"
 #include "core/Cache.h"
 
@@ -21,6 +24,8 @@ private slots:
     void remoteToggleHidesAndRestores();
     void openLastReadRestoresRecentBook();
     void ctrlOShowsOpenMenu();
+    void escapeClosesSearchBarAndClearsHighlight();
+    void progressPercentReflectsCurrentBookPosition();
 };
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -165,6 +170,44 @@ void TestMainWindow2::ctrlOShowsOpenMenu()
     QVERIFY(open);
     QVERIFY(open->isVisible());
     open->close();
+}
+
+void TestMainWindow2::escapeClosesSearchBarAndClearsHighlight()
+{
+    QTemporaryDir dir;
+    MainWindow w;
+    w.show();
+    const QString path = makeTxt(dir, QStringLiteral("search_book.txt"));
+    w.openBook(path);
+    auto *bar = w.findChild<QToolBar *>(QStringLiteral("searchBar"));
+    QVERIFY(bar);
+    auto *edit = w.findChild<QLineEdit *>(QStringLiteral("searchEdit"));
+    QVERIFY(edit);
+    QTest::keyClick(&w, Qt::Key_F, Qt::ControlModifier);
+    QVERIFY(bar->isVisible());
+    auto *view = qobject_cast<ReadingView *>(w.centralWidget());
+    QVERIFY(view);
+    edit->setText(QStringLiteral("正文内容"));
+    QVERIFY(view->findNext(edit->text()));
+    QVERIFY(view->currentMatchStart() >= 0);
+    edit->setFocus();
+    QTest::keyClick(edit, Qt::Key_Escape);
+    QVERIFY(!bar->isVisible());
+    QVERIFY(view->currentMatchStart() < 0);
+}
+
+void TestMainWindow2::progressPercentReflectsCurrentBookPosition()
+{
+    QTemporaryDir dir;
+    MainWindow w;
+    w.show();
+    const QString path = makeTxt(dir, QStringLiteral("progress_book.txt"));
+    w.openBook(path);
+    auto *view = qobject_cast<ReadingView *>(w.centralWidget());
+    QVERIFY(view);
+    QCOMPARE(w.currentProgressPercent(), 0);
+    view->goToChapter(4);
+    QVERIFY(w.currentProgressPercent() > 0);
 }
 
 int main(int argc, char *argv[])

@@ -80,6 +80,8 @@ MainWindow::MainWindow(QWidget *parent)
     searchBar->setObjectName(QStringLiteral("searchBar"));
     searchBar->setMovable(false);
     m_searchEdit = new QLineEdit(searchBar);
+    m_searchEdit->setObjectName(QStringLiteral("searchEdit"));
+    m_searchEdit->installEventFilter(this);
     m_searchEdit->setPlaceholderText(QStringLiteral("搜索（Enter 下一个，Esc 关闭）"));
     searchBar->addWidget(m_searchEdit);
     auto *wholeBook = new QCheckBox(QStringLiteral("全书"), searchBar);
@@ -323,6 +325,15 @@ void MainWindow::onSearchRequested()
     }
 }
 
+void MainWindow::closeSearchBar()
+{
+    if (QToolBar *bar = findChild<QToolBar *>(QStringLiteral("searchBar")))
+        bar->setVisible(false);
+    m_searchEdit->clear();
+    m_view->clearMatch();
+    m_view->setFocus();
+}
+
 void MainWindow::onJumpRequested()
 {
     if (!m_book)
@@ -332,6 +343,7 @@ void MainWindow::onJumpRequested()
     auto *spin = new QSpinBox(&dlg);
     spin->setRange(0, 100);
     spin->setSuffix(QStringLiteral(" %"));
+    spin->setValue(currentProgressPercent());
     auto *box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
@@ -395,6 +407,11 @@ void MainWindow::applyKeyset()
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
+    if (obj == m_searchEdit && event->type() == QEvent::KeyPress
+        && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+        closeSearchBar();
+        return true;
+    }
     if (event->type() == QEvent::ShortcutOverride || event->type() == QEvent::KeyPress) {
         auto *w = qobject_cast<QWidget *>(obj);
         if (!w || w->window() != this)
@@ -547,6 +564,13 @@ int MainWindow::tocItemCount() const
 int MainWindow::currentChapter() const
 {
     return m_view->currentChapter();
+}
+
+int MainWindow::currentProgressPercent() const
+{
+    if (!m_view)
+        return 0;
+    return qBound(0, qRound(m_view->currentBookProgress() * 100.0), 100);
 }
 
 void MainWindow::showHideWindow()

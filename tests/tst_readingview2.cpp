@@ -29,6 +29,7 @@ private slots:
     void dropLocalFileEmitsPath();
     void findNextWholeBookCrossesChapters();
     void wrappedParagraphRenderingKeepsLineGaps();
+    void currentBookProgressReflectsReadingPosition();
 };
 
 static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
@@ -273,6 +274,21 @@ void TestReadingView2::wrappedParagraphRenderingKeepsLineGaps()
     }
     QVERIFY2(maxBand <= normalBand,
              qPrintable(QStringLiteral("overlapping text band: %1 px").arg(maxBand)));
+}
+
+void TestReadingView2::currentBookProgressReflectsReadingPosition()
+{
+    QTemporaryDir dir;
+    auto book = makeBook(dir);
+    QVERIFY(book);
+    ReadingView view;
+    view.setSettings(DisplaySettings());
+    view.setBook(book);
+    view.resize(500, 200);
+    QCOMPARE(view.currentBookProgress(), 0.0);
+    view.goToChapter(15);
+    QVERIFY(view.currentBookProgress() > 0.0);
+    QVERIFY(view.currentBookProgress() < 1.0);
 }
 
 QTEST_MAIN(TestReadingView2)

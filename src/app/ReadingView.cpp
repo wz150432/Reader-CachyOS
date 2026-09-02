@@ -282,24 +282,6 @@ void ReadingView::paintEvent(QPaintEvent *)
         tl.draw(&painter, QPointF(line.pos.x() - tl.position().x(),
                                   line.pos.y() - tl.position().y()));
     }
-    if (m_matchStart >= 0 && m_matchEnd > m_matchStart) {
-        for (const DisplayLine &line : lines) {
-            const QPair<int, int> range = line.charRange;
-            if (m_matchStart >= range.second || m_matchEnd <= range.first)
-                continue;
-            const QTextLine tl = line.layout->lineAt(line.lineIndex);
-            const int len = tl.textLength();
-            const int p1 = qBound(0, m_matchStart - range.first, len);
-            const int p2 = qBound(0, m_matchEnd - range.first, len);
-            if (p2 <= p1)
-                continue;
-            const qreal x1 = tl.cursorToX(p1);
-            const qreal x2 = tl.cursorToX(p2);
-            painter.fillRect(QRectF(line.pos.x() + x1, line.pos.y(),
-                                    x2 - x1, tl.height()),
-                             QColor(0xFF, 0xE0, 0x66));
-        }
-    }
     applyTagHighlight(painter, lines);
     if (m_showPageIndicator) {
         painter.setPen(QColor(128, 128, 128));
@@ -552,6 +534,21 @@ void ReadingView::jumpToBookProgress(qreal progress)
     resetPixelScroll();
     emit pageChanged(m_page.currentPage());
     update();
+}
+
+qreal ReadingView::currentBookProgress() const
+{
+    if (!m_hasBook || m_book->chapters().isEmpty())
+        return 0.0;
+    const qint64 total = m_book->totalCharCount();
+    if (total <= 0)
+        return 0.0;
+    const QVector<Chapter> &ch = m_book->chapters();
+    if (m_chapter < 0 || m_chapter >= ch.size())
+        return 0.0;
+    const QPair<int, int> range = currentPageCharRange();
+    const qint64 offset = ch.at(m_chapter).charOffset + qMax(0, range.first);
+    return qBound<qreal>(0.0, qreal(offset) / qreal(total), 1.0);
 }
 
 int ReadingView::tagCount() const

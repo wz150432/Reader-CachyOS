@@ -47,6 +47,7 @@ public:
     bool scrollByPixels(qreal delta);
     bool findNext(const QString &keyword, bool forward = true);
     void jumpToBookProgress(qreal progress);
+    qreal currentBookProgress() const;
     void clearMatch() { m_matchStart = -1; m_matchEnd = -1; update(); }
     int currentMatchStart() const { return m_matchStart; }
     int currentMatchEnd() const { return m_matchEnd; }

@@ -157,7 +157,7 @@ void MainWindow::buildMenus()
     connect(fullAction, &QAction::triggered, this, &MainWindow::toggleFullscreen);
     QAction *topAction = windowMenu->addAction(QStringLiteral("窗口置顶"));
     connect(topAction, &QAction::triggered, this, &MainWindow::toggleAlwaysOnTop);
-    QAction *borderAction = windowMenu->addAction(QStringLiteral("隐藏边框"));
+    QAction *borderAction = windowMenu->addAction(QStringLiteral("隐藏菜单栏"));
     connect(borderAction, &QAction::triggered, this, &MainWindow::toggleHideBorder);
     QAction *hideAction = windowMenu->addAction(QStringLiteral("隐藏窗口"));
     connect(hideAction, &QAction::triggered, this, &MainWindow::showHideWindow);
@@ -502,16 +502,9 @@ void MainWindow::toggleAlwaysOnTop()
 
 void MainWindow::toggleHideBorder()
 {
-    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
-        // Wayland 桌面不允许程序自行去掉装饰；niri 提供"窗口化全屏"，
-        // 隐藏边框并铺满工作区，与 F11 的真全屏区分开。
-        QProcess::startDetached(QStringLiteral("niri"),
-                                {QStringLiteral("msg"), QStringLiteral("action"),
-                                 QStringLiteral("toggle-windowed-fullscreen")});
-        return;
-    }
-    setWindowFlag(Qt::FramelessWindowHint, !(windowFlags() & Qt::FramelessWindowHint));
-    show();
+    // 隐藏/显示窗口顶部的菜单栏（文件/目录/书签/设置/窗口/帮助）
+    if (menuBar())
+        menuBar()->setVisible(!menuBar()->isVisible());
 }
 
 void MainWindow::toggleAutoPage()

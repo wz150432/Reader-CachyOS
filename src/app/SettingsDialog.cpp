@@ -57,7 +57,7 @@ SettingsDialog::SettingsDialog(Settings *settings, QWidget *parent)
     auto *clearBg = new QPushButton(QStringLiteral("清除背景图"), this);
     connect(clearBg, &QPushButton::clicked, this, &SettingsDialog::clearBackgroundImage);
     m_alphaSlider = new QSlider(Qt::Horizontal, this);
-    m_alphaSlider->setRange(1, 255);
+    m_alphaSlider->setRange(0, 255);
     m_alphaSlider->setValue(m_settings->display.windowAlpha);
     m_alphaLabel = new QLabel(this);
     connect(m_alphaSlider, &QSlider::valueChanged, this, &SettingsDialog::updateAlphaLabel);

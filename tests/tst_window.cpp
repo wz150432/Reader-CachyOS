@@ -1,5 +1,6 @@
 #include <QtTest>
 #include <QApplication>
+#include <QMenuBar>
 #include <QTemporaryDir>
 #include "app/MainWindow.h"
 
@@ -59,9 +60,9 @@ void TestWindow::hideBorderToggle()
     MainWindow w;
     w.show();
     w.toggleHideBorder();
-    QVERIFY(!!(w.windowFlags() & Qt::FramelessWindowHint));
+    QVERIFY(!w.menuBar()->isVisible());
     w.toggleHideBorder();
-    QVERIFY(!(w.windowFlags() & Qt::FramelessWindowHint));
+    QVERIFY(w.menuBar()->isVisible());
 }
 
 void TestWindow::autopageReflectsSettings()

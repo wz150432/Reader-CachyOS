@@ -147,7 +147,7 @@ void TestReadingView2::ctrlShiftWheelSnapsAlpha()
                    Qt::NoScrollPhase, false);
     QApplication::sendEvent(&view, &up);
     QCOMPARE(spy.count(), 1);
-    QCOMPARE(spy.last().at(0).value<DisplaySettings>().windowAlpha, 1);
+    QCOMPARE(spy.last().at(0).value<DisplaySettings>().windowAlpha, 0);
     // Ctrl+Shift+滚轮向下：完全不透明
     QWheelEvent down(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, -120),
                      Qt::NoButton, Qt::ControlModifier | Qt::ShiftModifier,

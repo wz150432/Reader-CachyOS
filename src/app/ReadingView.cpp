@@ -222,11 +222,11 @@ void ReadingView::wheelEvent(QWheelEvent *event)
         int alpha = m_settings.windowAlpha;
         if (event->modifiers() & Qt::ShiftModifier) {
             // Ctrl+Shift+滚轮：向上基本全透明，向下完全不透明
-            alpha = delta > 0 ? 1 : 255;
+            alpha = delta > 0 ? 0 : 255;
         } else {
             // Ctrl+滚轮：向上更透明，向下更不透明
             alpha += delta > 0 ? -10 : 10;
-            alpha = qBound(1, alpha, 255);
+            alpha = qBound(0, alpha, 255);
         }
         if (alpha != m_settings.windowAlpha) {
             m_settings.windowAlpha = alpha;

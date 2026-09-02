@@ -39,6 +39,7 @@ namespace reader {
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
+    setAttribute(Qt::WA_TranslucentBackground, true);
     QApplication::instance()->installEventFilter(this);
     m_cache.load();
     m_settings.load();

@@ -1,10 +1,14 @@
 #include <QApplication>
 #include <QPalette>
+#include <QSurfaceFormat>
 #include <QStyleFactory>
 #include "app/MainWindow.h"
 
 int main(int argc, char *argv[])
 {
+    QSurfaceFormat fmt;
+    fmt.setAlphaBufferSize(8);
+    QSurfaceFormat::setDefaultFormat(fmt);
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("Reader"));
     app.setOrganizationName(QStringLiteral("Reader"));

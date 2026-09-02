@@ -10,6 +10,7 @@ class TestWindow : public QObject
     Q_OBJECT
 private slots:
     void hideAndShow();
+    void translucentBackgroundEnabled();
     void fullscreenToggle();
     void alwaysOnTopToggle();
     void hideBorderToggle();
@@ -25,6 +26,12 @@ void TestWindow::hideAndShow()
     QVERIFY(!w.isVisible());
     w.show();
     QVERIFY(w.isVisible());
+}
+
+void TestWindow::translucentBackgroundEnabled()
+{
+    MainWindow w;
+    QVERIFY(w.testAttribute(Qt::WA_TranslucentBackground));
 }
 
 void TestWindow::fullscreenToggle()

@@ -14,6 +14,8 @@ bool patchReaderOpacity(QString *content, double opacity)
     newBlock += QStringLiteral("    match title=r\".* - Reader$\"\n");
     newBlock += QStringLiteral("    open-floating true\n");
     newBlock += QStringLiteral("    opacity ") + opacityText + QLatin1Char('\n');
+    newBlock += QStringLiteral("    shadow { off; }\n");
+    newBlock += QStringLiteral("    draw-border-with-background false\n");
     newBlock += QLatin1Char('}');
 
     const QString target = QStringLiteral("reader(\\.desktop)");

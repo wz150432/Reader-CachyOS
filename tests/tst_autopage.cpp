@@ -84,7 +84,7 @@ void TestAutoPage::timerScrollsInScrollMode()
     view.resize(400, 150);
     const int before = view.currentPage();
     view.toggleAutoPage();
-    QTRY_VERIFY_WITH_TIMEOUT(view.currentPage() > before || view.lineOffset() > 0, 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(view.currentPage() > before || view.pixelOffset() > 0.0, 1000);
 }
 
 QTEST_MAIN(TestAutoPage)

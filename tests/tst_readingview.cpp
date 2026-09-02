@@ -70,7 +70,7 @@ void TestReadingView::keyAndWheelNavigation()
     QWheelEvent wheel(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, -120),
                       Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QApplication::sendEvent(&view, &wheel);
-    QVERIFY(view.lineOffset() > 0 || view.currentPage() > first);
+    QVERIFY(view.pixelOffset() > 0.0 || view.currentPage() > first);
 }
 
 QTEST_MAIN(TestReadingView)

@@ -78,6 +78,7 @@ void ReadingView::goToChapter(int index)
 
 void ReadingView::goToPage(int page)
 {
+    resetPixelScroll();
     if (m_page.goToPage(page)) {
         update();
         emit pageChanged(m_page.currentPage());
@@ -87,6 +88,7 @@ void ReadingView::goToPage(int page)
 void ReadingView::pageUp()
 {
     if (m_page.prevPage()) {
+        resetPixelScroll();
         emit pageChanged(m_page.currentPage());
         update();
     }
@@ -95,6 +97,7 @@ void ReadingView::pageUp()
 void ReadingView::pageDown()
 {
     if (m_page.nextPage()) {
+        resetPixelScroll();
         emit pageChanged(m_page.currentPage());
         update();
     }
@@ -102,7 +105,7 @@ void ReadingView::pageDown()
 
 void ReadingView::lineUp()
 {
-    if (m_page.prevLine()) {
+    if (scrollByPixels(-currentLineStep())) {
         emit pageChanged(m_page.currentPage());
         update();
     }
@@ -110,7 +113,7 @@ void ReadingView::lineUp()
 
 void ReadingView::lineDown()
 {
-    if (m_page.nextLine()) {
+    if (scrollByPixels(currentLineStep())) {
         emit pageChanged(m_page.currentPage());
         update();
     }
@@ -128,6 +131,7 @@ void ReadingView::fontZoomOut()
 
 void ReadingView::refreshLayout()
 {
+    resetPixelScroll();
     m_page.setParams(toPageParams(m_settings));
     m_page.setViewSize(width(), height());
     if (m_hasBook)
@@ -139,12 +143,72 @@ void ReadingView::loadChapter()
 {
     if (!m_hasBook)
         return;
+    resetPixelScroll();
     m_page.setParams(toPageParams(m_settings));
     m_page.setViewSize(width(), height());
     m_page.setText(m_book->chapterText(m_chapter));
     m_page.goToPage(0);
     emit pageChanged(0);
     update();
+}
+
+void ReadingView::resetPixelScroll()
+{
+    m_pixelOffset = 0.0;
+}
+
+qreal ReadingView::currentPageContentHeight() const
+{
+    if (m_page.pageCount() == 0)
+        return 0.0;
+    const PageContent &content = m_page.content(m_page.currentPage());
+    if (content.paragraphIndex.isEmpty())
+        return 0.0;
+    const QTextLayout &layout = m_page.paragraph(content.paragraphIndex.last());
+    return content.positions.last().y() + layout.lineAt(content.lineIndex.last()).height();
+}
+
+qreal ReadingView::currentLineStep() const
+{
+    if (m_page.pageCount() == 0)
+        return 20.0;
+    const PageContent &content = m_page.content(m_page.currentPage());
+    if (content.paragraphIndex.isEmpty())
+        return 20.0;
+    const QTextLayout &layout = m_page.paragraph(content.paragraphIndex.first());
+    return layout.lineAt(content.lineIndex.first()).height() + m_settings.lineGap;
+}
+
+bool ReadingView::scrollByPixels(qreal delta)
+{
+    if (!m_hasBook || m_page.pageCount() == 0)
+        return false;
+    const int startPage = m_page.currentPage();
+    const qreal viewHeight = qMax<qreal>(20.0, height() - 2 * m_settings.margin);
+    qreal target = m_pixelOffset + delta;
+    while (target < 0.0) {
+        if (!m_page.prevPage()) {
+            target = 0.0;
+            break;
+        }
+        target += currentPageContentHeight();
+    }
+    while (m_page.currentPage() + 1 < m_page.pageCount()) {
+        const qreal pageHeight = currentPageContentHeight();
+        if (pageHeight <= 0.0 || target < pageHeight)
+            break;
+        target -= pageHeight;
+        m_page.nextPage();
+    }
+    if (m_page.currentPage() + 1 >= m_page.pageCount()) {
+        const qreal pageHeight = currentPageContentHeight();
+        target = qBound(0.0, target, qMax(0.0, pageHeight - viewHeight));
+    }
+    target = qMax(0.0, target);
+    const bool changed = m_page.currentPage() != startPage
+        || !qFuzzyCompare(m_pixelOffset, target);
+    m_pixelOffset = target;
+    return changed;
 }
 
 void ReadingView::paintEvent(QPaintEvent *)
@@ -170,33 +234,47 @@ void ReadingView::paintEvent(QPaintEvent *)
         return;
     }
     painter.setPen(m_settings.textColor);
-    const PageContent &content = m_page.content(m_page.currentPage());
-    const int from = m_page.lineOffset();
-    for (int i = from; i < content.paragraphIndex.size(); ++i) {
-        const QTextLayout &layout = m_page.paragraph(content.paragraphIndex.at(i));
-        layout.lineAt(content.lineIndex.at(i)).draw(&painter, content.positions.at(i));
-    }
+    const int currentPage = m_page.currentPage();
+    const PageContent &content = m_page.content(currentPage);
+    const qreal offset = m_pixelOffset;
+    const qreal currentHeight = currentPageContentHeight();
+    QVector<DisplayLine> lines;
+    const auto addLines = [this, &lines](const PageContent &page, qreal yShift) {
+        for (int i = 0; i < page.paragraphIndex.size(); ++i) {
+            const QTextLayout &layout = m_page.paragraph(page.paragraphIndex.at(i));
+            const QTextLine tl = layout.lineAt(page.lineIndex.at(i));
+            const qreal y = page.positions.at(i).y() + yShift;
+            if (y + tl.height() <= 0 || y >= height())
+                continue;
+            lines.append({&layout, page.lineIndex.at(i),
+                          QPointF(page.positions.at(i).x(), y),
+                          page.lineCharRange.at(i)});
+        }
+    };
+    addLines(content, -offset);
+    if (offset > 0.0 && currentPage + 1 < m_page.pageCount())
+        addLines(m_page.content(currentPage + 1), currentHeight - offset);
+    for (const DisplayLine &line : lines)
+        line.layout->lineAt(line.lineIndex).draw(&painter, line.pos);
     if (m_matchStart >= 0 && m_matchEnd > m_matchStart) {
-        for (int i = from; i < content.paragraphIndex.size(); ++i) {
-            const QPair<int, int> range = content.lineCharRange.at(i);
+        for (const DisplayLine &line : lines) {
+            const QPair<int, int> range = line.charRange;
             if (m_matchStart >= range.second || m_matchEnd <= range.first)
                 continue;
-            const QTextLayout &layout = m_page.paragraph(content.paragraphIndex.at(i));
-            const QTextLine line = layout.lineAt(content.lineIndex.at(i));
-            const int len = line.textLength();
+            const QTextLine tl = line.layout->lineAt(line.lineIndex);
+            const int len = tl.textLength();
             const int p1 = qBound(0, m_matchStart - range.first, len);
             const int p2 = qBound(0, m_matchEnd - range.first, len);
             if (p2 <= p1)
                 continue;
-            const qreal x1 = line.cursorToX(p1);
-            const qreal x2 = line.cursorToX(p2);
-            painter.fillRect(QRectF(content.positions.at(i).x() + x1,
-                                    content.positions.at(i).y(),
-                                    x2 - x1, line.height()),
+            const qreal x1 = tl.cursorToX(p1);
+            const qreal x2 = tl.cursorToX(p2);
+            painter.fillRect(QRectF(line.pos.x() + x1, line.pos.y(),
+                                    x2 - x1, tl.height()),
                              QColor(0xFF, 0xE0, 0x66));
         }
     }
-    applyTagHighlight(painter, content, from);
+    applyTagHighlight(painter, lines);
     painter.setPen(QColor(128, 128, 128));
     painter.drawText(rect().adjusted(0, 0, -12, -8), Qt::AlignRight | Qt::AlignBottom,
                      QStringLiteral("%1 / %2").arg(m_page.currentPage() + 1).arg(m_page.pageCount()));
@@ -205,6 +283,7 @@ void ReadingView::paintEvent(QPaintEvent *)
 void ReadingView::resizeEvent(QResizeEvent *event)
 {
     const qreal keep = m_page.progress();
+    resetPixelScroll();
     m_page.setViewSize(width(), height());
     m_page.jumpToProgress(keep);
     QWidget::resizeEvent(event);
@@ -226,9 +305,11 @@ void ReadingView::mousePressEvent(QMouseEvent *event)
         return;
     }
     if (event->button() == Qt::LeftButton && m_page.nextPage()) {
+        resetPixelScroll();
         emit pageChanged(m_page.currentPage());
         update();
     } else if (event->button() == Qt::RightButton && m_page.prevPage()) {
+        resetPixelScroll();
         emit pageChanged(m_page.currentPage());
         update();
     }
@@ -284,7 +365,8 @@ void ReadingView::wheelEvent(QWheelEvent *event)
         event->accept();
         return;
     }
-    if (m_page.scrollLines(delta < 0 ? 1 : -1)) {
+    const qreal step = qMax(1.0, qAbs(delta) / 120.0) * 24.0;
+    if (scrollByPixels(delta < 0 ? step : -step)) {
         emit pageChanged(m_page.currentPage());
         update();
     }
@@ -409,6 +491,7 @@ bool ReadingView::findNext(const QString &keyword, bool forward)
         goToChapter(foundChapter);
     const int page = m_page.pageForChar(foundIndex);
     m_page.goToPage(page);
+    resetPixelScroll();
     emit pageChanged(page);
     update();
     return true;
@@ -437,6 +520,7 @@ void ReadingView::jumpToBookProgress(qreal progress)
     const qint64 cend = (ci + 1 < ch.size()) ? ch.at(ci + 1).charOffset : total;
     const qreal frac = (cend > cstart) ? qreal(target - cstart) / qreal(cend - cstart) : 0.0;
     m_page.jumpToProgress(frac);
+    resetPixelScroll();
     emit pageChanged(m_page.currentPage());
     update();
 }
@@ -454,8 +538,10 @@ int ReadingView::tagCount() const
 void ReadingView::onAutoPageTick()
 {
     const bool advanced = m_behavior.autoPageScrollMode
-        ? m_page.scrollDown()
+        ? scrollByPixels(m_behavior.scrollStep * 4.0)
         : m_page.nextPage();
+    if (advanced && !m_behavior.autoPageScrollMode)
+        resetPixelScroll();
     if (advanced) {
         emit pageChanged(m_page.currentPage());
         update();
@@ -484,7 +570,7 @@ void ReadingView::toggleAutoPage()
         startAutoPage();
 }
 
-void ReadingView::applyTagHighlight(QPainter &painter, const PageContent &content, int fromIndex)
+void ReadingView::applyTagHighlight(QPainter &painter, const QVector<DisplayLine> &lines)
 {
     if (m_tags.isEmpty() || !m_hasBook)
         return;
@@ -501,23 +587,21 @@ void ReadingView::applyTagHighlight(QPainter &painter, const PageContent &conten
         }
         if (hits.isEmpty())
             continue;
-        for (int i = fromIndex; i < content.paragraphIndex.size(); ++i) {
-            const QPair<int, int> range = content.lineCharRange.at(i);
+        for (const DisplayLine &line : lines) {
+            const QPair<int, int> range = line.charRange;
             for (const int h : hits) {
                 if (h >= range.second || h + tag.keyword.size() <= range.first)
                     continue;
-                const QTextLayout &layout = m_page.paragraph(content.paragraphIndex.at(i));
-                const QTextLine line = layout.lineAt(content.lineIndex.at(i));
-                const int len = line.textLength();
+                const QTextLine tl = line.layout->lineAt(line.lineIndex);
+                const int len = tl.textLength();
                 const int p1 = qBound(0, h - range.first, len);
                 const int p2 = qBound(0, h + tag.keyword.size() - range.first, len);
                 if (p2 <= p1)
                     continue;
-                const qreal x1 = line.cursorToX(p1);
-                const qreal x2 = line.cursorToX(p2);
-                painter.fillRect(QRectF(content.positions.at(i).x() + x1,
-                                        content.positions.at(i).y(),
-                                        x2 - x1, line.height()), bg);
+                const qreal x1 = tl.cursorToX(p1);
+                const qreal x2 = tl.cursorToX(p2);
+                painter.fillRect(QRectF(line.pos.x() + x1, line.pos.y(),
+                                        x2 - x1, tl.height()), bg);
             }
         }
     }

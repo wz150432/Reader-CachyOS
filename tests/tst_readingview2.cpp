@@ -76,11 +76,11 @@ void TestReadingView2::wheelScrollsByLine()
     view.show();
     view.resize(300, 100);
     QVERIFY(view.pageCount() > 1);
-    QCOMPARE(view.lineOffset(), 0);
+    QCOMPARE(view.pixelOffset(), 0.0);
     QWheelEvent wheel(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, -120),
                       Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QApplication::sendEvent(&view, &wheel);
-    QVERIFY(view.lineOffset() > 0 || view.currentPage() > 0);
+    QVERIFY(view.pixelOffset() > 0.0 || view.currentPage() > 0);
 }
 
 void TestReadingView2::findNextJumpsAndHighlights()

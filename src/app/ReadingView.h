@@ -31,6 +31,7 @@ public:
     int currentPage() const { return m_page.currentPage(); }
     int pageCount() const { return m_page.pageCount(); }
     int lineOffset() const { return m_page.lineOffset(); }
+    qreal pixelOffset() const { return m_pixelOffset; }
     QPair<int, int> currentPageCharRange() const { return m_page.charRange(m_page.currentPage()); }
     void pageUp();
     void pageDown();
@@ -41,6 +42,7 @@ public:
     void goToChapter(int index);
     void goToPage(int page);
     void refreshLayout();
+    bool scrollByPixels(qreal delta);
     bool findNext(const QString &keyword, bool forward = true);
     void jumpToBookProgress(qreal progress);
     void clearMatch() { m_matchStart = -1; m_matchEnd = -1; update(); }
@@ -70,12 +72,22 @@ protected:
     void dropEvent(QDropEvent *event) override;
 
 private:
+    struct DisplayLine
+    {
+        const QTextLayout *layout = nullptr;
+        int lineIndex = 0;
+        QPointF pos;
+        QPair<int, int> charRange;
+    };
     void loadChapter();
     void nextChapter();
     void prevChapter();
     void fontZoom(int delta);
     void onAutoPageTick();
-    void applyTagHighlight(QPainter &painter, const PageContent &content, int fromIndex);
+    void applyTagHighlight(QPainter &painter, const QVector<DisplayLine> &lines);
+    qreal currentPageContentHeight() const;
+    qreal currentLineStep() const;
+    void resetPixelScroll();
     std::shared_ptr<Book> m_book;
     DisplaySettings m_settings;
     Keyset m_keyset;
@@ -92,6 +104,7 @@ private:
     bool m_leftPressed = false;
     bool m_rightPressed = false;
     bool m_searchWholeBook = false;
+    qreal m_pixelOffset = 0.0;
 };
 
 }

@@ -34,7 +34,7 @@ BasicSettingsDialog::BasicSettingsDialog(Settings *settings, QWidget *parent)
     auto *form = new QFormLayout;
     form->addRow(QStringLiteral("自动翻页间隔"), m_intervalSpin);
     form->addRow(QStringLiteral("自动翻页模式"), m_modeCombo);
-    form->addRow(QStringLiteral("滚动速度（行/步）"), m_scrollStepSpin);
+    form->addRow(QStringLiteral("滚动速度（像素/步）"), m_scrollStepSpin);
     form->addRow(QString(), m_minimizeToTray);
     form->addRow(QString(), m_doubleClickHide);
 

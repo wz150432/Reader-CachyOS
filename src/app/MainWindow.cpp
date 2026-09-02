@@ -288,11 +288,13 @@ void MainWindow::openBookmarkList()
         return;
     const QVector<Bookmark> marks = m_cache.bookmarks(m_currentPath);
     BookmarkDialog dlg(marks, this);
-    connect(&dlg, &BookmarkDialog::jumpRequested, this, [this, &dlg, marks](int idx) {
-        if (idx >= 0 && idx < marks.size()) {
-            m_view->goToChapter(marks.at(idx).chapterIndex);
-            m_view->goToPage(marks.at(idx).pageIndex);
-        }
+    connect(&dlg, &BookmarkDialog::jumpRequested, this, [this](const Bookmark &b) {
+        m_view->goToChapter(b.chapterIndex);
+        m_view->goToPage(b.pageIndex);
+    });
+    connect(&dlg, &BookmarkDialog::deleteRequested, this, [this](const Bookmark &b) {
+        m_cache.removeBookmark(m_currentPath, b.created);
+        m_cache.save();
     });
     dlg.exec();
 }

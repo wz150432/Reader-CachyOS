@@ -9,7 +9,9 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QImageReader>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPixmap>
 #include <QPushButton>
 #include <QScreen>
@@ -158,13 +160,24 @@ void SettingsDialog::pickScreenColor()
 
 void SettingsDialog::pickBackgroundImage()
 {
+    QStringList patterns;
+    const QList<QByteArray> formats = QImageReader::supportedImageFormats();
+    for (const QByteArray &format : formats)
+        patterns << QStringLiteral("*.%1").arg(QString::fromLatin1(format));
+    const QString filter = QStringLiteral("图片 (%1);;所有文件 (*)")
+                               .arg(patterns.join(QLatin1Char(' ')));
     const QString path = QFileDialog::getOpenFileName(
-        this, QStringLiteral("选择背景图片"), QString(),
-        QStringLiteral("图片 (*.png *.jpg *.jpeg *.bmp)"));
-    if (!path.isEmpty()) {
-        m_settings->display.bgImagePath = path;
-        m_bgImageButton->setText(QFileInfo(path).fileName());
+        this, QStringLiteral("选择背景图片"), QString(), filter);
+    if (path.isEmpty())
+        return;
+    QImageReader reader(path);
+    if (!reader.canRead()) {
+        QMessageBox::warning(this, QStringLiteral("无法打开"),
+                             QStringLiteral("无法识别这个图片文件"));
+        return;
     }
+    m_settings->display.bgImagePath = path;
+    m_bgImageButton->setText(QFileInfo(path).fileName());
 }
 
 void SettingsDialog::clearBackgroundImage()

@@ -3,6 +3,7 @@
 #include <QDropEvent>
 #include <QFileInfo>
 #include <QKeyEvent>
+#include <QImageReader>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
@@ -67,7 +68,13 @@ void ReadingView::setSettings(const DisplaySettings &settings)
     m_settings = settings;
     if (m_bgImagePath != settings.bgImagePath) {
         m_bgImagePath = settings.bgImagePath;
-        m_bgPixmap = QPixmap(m_bgImagePath);
+        m_bgPixmap = QPixmap();
+        if (!m_bgImagePath.isEmpty()) {
+            QImageReader reader(m_bgImagePath);
+            const QImage image = reader.read();
+            if (!image.isNull())
+                m_bgPixmap = QPixmap::fromImage(image);
+        }
     }
     refreshLayout();
 }

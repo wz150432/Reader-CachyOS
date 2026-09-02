@@ -23,7 +23,20 @@ bool patchReaderOpacity(QString *content, double opacity)
     const QString blockStart = QStringLiteral("window-rule {");
     int pos = content->indexOf(blockStart);
     while (pos >= 0) {
-        const int close = content->indexOf(QLatin1Char('}'), pos);
+        int depth = 0;
+        int close = -1;
+        for (int i = pos; i < content->size(); ++i) {
+            const QChar c = content->at(i);
+            if (c == QLatin1Char('{')) {
+                ++depth;
+            } else if (c == QLatin1Char('}')) {
+                --depth;
+                if (depth == 0) {
+                    close = i;
+                    break;
+                }
+            }
+        }
         if (close < 0)
             break;
         const QString block = content->mid(pos, close - pos + 1);

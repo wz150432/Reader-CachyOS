@@ -213,6 +213,20 @@ bool ReadingView::scrollByPixels(qreal delta)
         target = qBound(0.0, target, qMax(0.0, pageHeight - viewHeight));
     }
     target = qMax(0.0, target);
+    const qreal step = currentLineStep();
+    if (step > 0.0)
+        target = qRound(target / step) * step;
+    if (m_page.currentPage() + 1 < m_page.pageCount()) {
+        const qreal pageHeight = currentPageContentHeight();
+        if (pageHeight > 0.0 && target >= pageHeight) {
+            m_page.nextPage();
+            target = 0.0;
+        }
+    }
+    if (m_page.currentPage() + 1 >= m_page.pageCount()) {
+        const qreal pageHeight = currentPageContentHeight();
+        target = qBound(0.0, target, qMax(0.0, pageHeight - viewHeight));
+    }
     const bool changed = m_page.currentPage() != startPage
         || !qFuzzyCompare(m_pixelOffset, target);
     m_pixelOffset = target;
@@ -375,7 +389,8 @@ void ReadingView::wheelEvent(QWheelEvent *event)
         event->accept();
         return;
     }
-    const qreal step = qMax(1.0, qAbs(delta) / 120.0) * 24.0;
+    const qreal step = currentLineStep()
+        * qMax(1, qRound(qAbs(delta) / 120.0));
     if (scrollByPixels(delta < 0 ? step : -step)) {
         emit pageChanged(m_page.currentPage());
         update();
@@ -548,7 +563,7 @@ int ReadingView::tagCount() const
 void ReadingView::onAutoPageTick()
 {
     const bool advanced = m_behavior.autoPageScrollMode
-        ? scrollByPixels(m_behavior.scrollStep * 4.0)
+        ? scrollByPixels(currentLineStep() * m_behavior.scrollStep)
         : m_page.nextPage();
     if (advanced && !m_behavior.autoPageScrollMode)
         resetPixelScroll();

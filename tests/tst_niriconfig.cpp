@@ -11,6 +11,7 @@ private slots:
     void appendsWhenMissing();
     void invalidOpacityRejected();
     void globalHideBindAddAndRemove();
+    void readerBlockWithNestedShadowStaysIntact();
 };
 
 void TestNiriConfig::updatesExistingReaderBlock()
@@ -67,6 +68,19 @@ void TestNiriConfig::globalHideBindAddAndRemove()
     QVERIFY(patchReaderGlobalHide(&content, false, QStringLiteral("/tmp/reader")));
     QVERIFY(!content.contains(QStringLiteral("--toggle-hide")));
     QVERIFY(!content.contains(QStringLiteral("reader-global-hide")));
+}
+
+void TestNiriConfig::readerBlockWithNestedShadowStaysIntact()
+{
+    QString content = QStringLiteral(
+        "window-rule {\n"
+        "    match app-id=r\"^reader(\\.desktop)?$\"\n"
+        "    shadow { off; }\n"
+        "    draw-border-with-background false\n"
+        "}\n");
+    QVERIFY(patchReaderOpacity(&content, 1.0));
+    QCOMPARE(content.count(QStringLiteral("draw-border-with-background false")), 1);
+    QCOMPARE(content.count(QStringLiteral("window-rule {")), 1);
 }
 
 QTEST_APPLESS_MAIN(TestNiriConfig)

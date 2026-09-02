@@ -8,6 +8,7 @@
 #include "app/TagsetDialog.h"
 #include "core/NiriConfig.h"
 #include <QApplication>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QCursor>
 #include <QDateTime>
@@ -75,8 +76,11 @@ MainWindow::MainWindow(QWidget *parent)
     searchBar->setObjectName(QStringLiteral("searchBar"));
     searchBar->setMovable(false);
     m_searchEdit = new QLineEdit(searchBar);
-    m_searchEdit->setPlaceholderText(QStringLiteral("搜索当前章节（Enter 下一个，Esc 关闭）"));
+    m_searchEdit->setPlaceholderText(QStringLiteral("搜索（Enter 下一个，Esc 关闭）"));
     searchBar->addWidget(m_searchEdit);
+    auto *wholeBook = new QCheckBox(QStringLiteral("全书"), searchBar);
+    searchBar->addWidget(wholeBook);
+    connect(wholeBook, &QCheckBox::toggled, m_view, &ReadingView::setSearchWholeBook);
     searchBar->setVisible(false);
     connect(m_searchEdit, &QLineEdit::returnPressed, this, [this] {
         m_view->findNext(m_searchEdit->text());

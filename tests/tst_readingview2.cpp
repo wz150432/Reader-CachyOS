@@ -24,6 +24,7 @@ private slots:
     void ctrlShiftWheelSnapsAlpha();
     void translucentBackgroundEnabled();
     void dropLocalFileEmitsPath();
+    void findNextWholeBookCrossesChapters();
 };
 
 static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
@@ -189,6 +190,22 @@ void TestReadingView2::dropLocalFileEmitsPath()
     QApplication::sendEvent(&view, &event);
     QCOMPARE(spy.count(), 1);
     QCOMPARE(spy.takeFirst().at(0).toString(), path);
+}
+
+void TestReadingView2::findNextWholeBookCrossesChapters()
+{
+    QTemporaryDir dir;
+    auto book = makeBook(dir);
+    QVERIFY(book);
+    ReadingView view;
+    view.setSettings(DisplaySettings());
+    view.setBook(book);
+    view.resize(500, 600);
+    QVERIFY(!view.findNext(QStringLiteral("独一无二的线索词")));
+    view.setSearchWholeBook(true);
+    QVERIFY(view.findNext(QStringLiteral("独一无二的线索词")));
+    QCOMPARE(view.currentChapter(), 5);
+    QVERIFY(view.currentMatchStart() >= 0);
 }
 
 QTEST_MAIN(TestReadingView2)

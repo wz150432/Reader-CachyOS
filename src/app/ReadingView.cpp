@@ -354,20 +354,56 @@ bool ReadingView::findNext(const QString &keyword, bool forward)
 {
     if (!m_hasBook || keyword.isEmpty())
         return false;
-    const QString text = m_book->chapterText(m_chapter);
+    const QVector<Chapter> &chapters = m_book->chapters();
     const QPair<int, int> cur = m_page.charRange(m_page.currentPage());
-    int idx = -1;
-    if (forward)
-        idx = text.indexOf(keyword, cur.second);
-    else
-        idx = text.lastIndexOf(keyword, qMax(0, cur.first - 1));
-    if (idx < 0)
-        idx = forward ? text.indexOf(keyword) : text.lastIndexOf(keyword);
-    if (idx < 0)
+    int foundChapter = -1;
+    int foundIndex = -1;
+    if (!m_searchWholeBook) {
+        const QString text = m_book->chapterText(m_chapter);
+        int idx = forward ? text.indexOf(keyword, cur.second)
+                          : text.lastIndexOf(keyword, qMax(0, cur.first - 1));
+        if (idx < 0)
+            idx = forward ? text.indexOf(keyword) : text.lastIndexOf(keyword);
+        if (idx >= 0) {
+            foundChapter = m_chapter;
+            foundIndex = idx;
+        }
+    } else {
+        // 全书搜索：先看当前位置之后/之前的章节，再从全书开头/结尾绕回
+        QVector<QPair<int, bool>> tasks;
+        tasks.append({m_chapter, true});
+        if (forward) {
+            for (int i = m_chapter + 1; i < chapters.size(); ++i)
+                tasks.append({i, false});
+            for (int i = 0; i <= m_chapter; ++i)
+                tasks.append({i, false});
+        } else {
+            for (int i = m_chapter - 1; i >= 0; --i)
+                tasks.append({i, false});
+            for (int i = chapters.size() - 1; i >= m_chapter; --i)
+                tasks.append({i, false});
+        }
+        for (const QPair<int, bool> &task : tasks) {
+            const int ci = task.first;
+            const QString text = m_book->chapterText(ci);
+            const int idx = task.second
+                ? (forward ? text.indexOf(keyword, cur.second)
+                           : text.lastIndexOf(keyword, qMax(0, cur.first - 1)))
+                : (forward ? text.indexOf(keyword) : text.lastIndexOf(keyword));
+            if (idx >= 0) {
+                foundChapter = ci;
+                foundIndex = idx;
+                break;
+            }
+        }
+    }
+    if (foundChapter < 0 || foundIndex < 0)
         return false;
-    m_matchStart = idx;
-    m_matchEnd = idx + keyword.size();
-    const int page = m_page.pageForChar(idx);
+    m_matchStart = foundIndex;
+    m_matchEnd = foundIndex + keyword.size();
+    if (foundChapter != m_chapter)
+        goToChapter(foundChapter);
+    const int page = m_page.pageForChar(foundIndex);
     m_page.goToPage(page);
     emit pageChanged(page);
     update();

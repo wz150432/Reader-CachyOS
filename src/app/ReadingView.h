@@ -20,6 +20,8 @@ public:
     void setKeyset(const Keyset &keyset) { m_keyset = keyset; }
     void setBehavior(const BehaviorSettings &behavior) { m_behavior = behavior; }
     void setTags(const QVector<TagItem> &tags) { m_tags = tags; update(); }
+    void setSearchWholeBook(bool enabled) { m_searchWholeBook = enabled; }
+    bool searchWholeBook() const { return m_searchWholeBook; }
     int tagCount() const;
     void startAutoPage();
     void stopAutoPage();
@@ -89,6 +91,7 @@ private:
     int m_matchEnd = -1;
     bool m_leftPressed = false;
     bool m_rightPressed = false;
+    bool m_searchWholeBook = false;
 };
 
 }

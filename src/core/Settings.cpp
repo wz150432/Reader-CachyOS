@@ -77,6 +77,8 @@ BehaviorSettings Settings::readBehavior(const QJsonObject &o)
     b.scrollStep = intOr(o, "scroll_step", b.scrollStep);
     b.minimizeToTray = boolOr(o, "minimize_to_tray", b.minimizeToTray);
     b.doubleClickHide = boolOr(o, "double_click_hide", b.doubleClickHide);
+    b.globalHideEnabled = boolOr(o, "global_hide_enabled", b.globalHideEnabled);
+    b.globalHidePopup = boolOr(o, "global_hide_popup", b.globalHidePopup);
     return b;
 }
 
@@ -88,6 +90,8 @@ QJsonObject Settings::writeBehavior() const
     o.insert(QStringLiteral("scroll_step"), behavior.scrollStep);
     o.insert(QStringLiteral("minimize_to_tray"), behavior.minimizeToTray);
     o.insert(QStringLiteral("double_click_hide"), behavior.doubleClickHide);
+    o.insert(QStringLiteral("global_hide_enabled"), behavior.globalHideEnabled);
+    o.insert(QStringLiteral("global_hide_popup"), behavior.globalHidePopup);
     return o;
 }
 

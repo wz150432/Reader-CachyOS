@@ -4,6 +4,7 @@
 #include "app/BookmarkDialog.h"
 #include "app/KeysetDialog.h"
 #include "app/ReadingView.h"
+#include "app/RemoteControl.h"
 #include "app/SettingsDialog.h"
 #include "app/TagsetDialog.h"
 #include "core/NiriConfig.h"
@@ -93,6 +94,10 @@ MainWindow::MainWindow(QWidget *parent)
     resize(960, 720);
     applyWindowOpacity();
     createTrayIcon();
+    m_control = new RemoteControl(this);
+    connect(m_control, &RemoteControl::commandReceived,
+            this, &MainWindow::handleRemoteCommand);
+    syncGlobalHide();
 }
 
 void MainWindow::buildMenus()
@@ -143,6 +148,7 @@ void MainWindow::buildMenus()
         if (dlg.exec() == QDialog::Accepted) {
             m_view->setBehavior(m_settings.behavior);
             applyWindowOpacity();
+            syncGlobalHide();
         }
     });
     QAction *advancedAction = settings->addAction(QStringLiteral("高级设置"));
@@ -478,6 +484,7 @@ void MainWindow::resetSettings()
     m_view->setTags(m_settings.tags);
     applyKeyset();
     applyWindowOpacity();
+    syncGlobalHide();
 }
 
 void MainWindow::updateTitle()
@@ -543,6 +550,62 @@ void MainWindow::showHideWindow()
     } else {
         show();
     }
+}
+
+void MainWindow::handleRemoteCommand(const QString &command)
+{
+    const bool hide = command == QStringLiteral("hide")
+        || (command == QStringLiteral("toggle-hide") && isVisible());
+    if (hide) {
+        if (!isVisible())
+            return;
+        if (m_settings.behavior.globalHidePopup) {
+            if (QMessageBox::question(this, QStringLiteral("隐藏 Reader"),
+                    QStringLiteral("确定隐藏 Reader 窗口吗？")) != QMessageBox::Yes)
+                return;
+        }
+        showHideWindow();
+        return;
+    }
+    if (command == QStringLiteral("show")
+        || (command == QStringLiteral("toggle-hide") && !isVisible())) {
+        if (!isVisible()) {
+            show();
+            activateWindow();
+            raise();
+        }
+        if (m_settings.behavior.globalHidePopup) {
+            QMessageBox::information(this, QStringLiteral("Reader"),
+                QStringLiteral("Reader 已恢复显示"));
+        }
+    }
+}
+
+void MainWindow::syncGlobalHide()
+{
+    const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation))
+                            .filePath(QStringLiteral("niri"));
+    const QString path = dir + QStringLiteral("/binds.kdl");
+    QFile f(path);
+    if (!f.exists() || !f.open(QIODevice::ReadOnly))
+        return;
+    const QString content = QString::fromUtf8(f.readAll());
+    f.close();
+    QString patched = content;
+    if (!reader::patchReaderGlobalHide(&patched, m_settings.behavior.globalHideEnabled,
+                                       QCoreApplication::applicationFilePath()))
+        return;
+    if (patched == content)
+        return;
+    QSaveFile sf(path);
+    if (!sf.open(QIODevice::WriteOnly))
+        return;
+    sf.write(patched.toUtf8());
+    if (!sf.commit())
+        return;
+    QProcess::startDetached(QStringLiteral("niri"),
+                            {QStringLiteral("msg"), QStringLiteral("action"),
+                             QStringLiteral("load-config-file")});
 }
 
 void MainWindow::toggleFullscreen()

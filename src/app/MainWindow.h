@@ -14,6 +14,7 @@ class QSystemTrayIcon;
 namespace reader {
 
 class ReadingView;
+class RemoteControl;
 
 class MainWindow : public QMainWindow
 {
@@ -34,6 +35,7 @@ public:
     bool autoPageActive() const;
     bool windowHiddenForTest() const { return !isVisible(); }
     void clearRecentList();
+    void handleRemoteCommand(const QString &command);
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -59,11 +61,13 @@ private:
     void applyKeyset();
     void createTrayIcon();
     void applyWindowOpacity();
+    void syncGlobalHide();
     void handleKeyAction(KeyAction action);
     ReadingView *m_view = nullptr;
     QTreeWidget *m_toc = nullptr;
     QLineEdit *m_searchEdit = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
+    RemoteControl *m_control = nullptr;
     bool m_topHintShown = false;
     Cache m_cache;
     Settings m_settings;

@@ -34,6 +34,8 @@ struct BehaviorSettings
     int scrollStep = 1;
     bool minimizeToTray = false;
     bool doubleClickHide = true;
+    bool globalHideEnabled = false;
+    bool globalHidePopup = true;
 };
 
 struct TagItem

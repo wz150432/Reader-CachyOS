@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Test Network)
 qt_standard_project_setup()
 
 qt_add_executable(reader
@@ -18,9 +18,10 @@ qt_add_executable(reader
     src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
     src/app/AdvancedSettingsDialog.cpp src/app/AdvancedSettingsDialog.h
     src/app/TagsetDialog.cpp src/app/TagsetDialog.h
+    src/app/RemoteControl.cpp src/app/RemoteControl.h
 )
 target_include_directories(reader PRIVATE src)
-target_link_libraries(reader PRIVATE reader_core Qt6::Widgets)
+target_link_libraries(reader PRIVATE reader_core Qt6::Widgets Qt6::Network)
 
 enable_testing()
 
@@ -86,9 +87,10 @@ qt_add_executable(tst_mainwindow
     src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
     src/app/AdvancedSettingsDialog.cpp src/app/AdvancedSettingsDialog.h
     src/app/TagsetDialog.cpp src/app/TagsetDialog.h
+    src/app/RemoteControl.cpp src/app/RemoteControl.h
 )
 target_include_directories(tst_mainwindow PRIVATE src)
-target_link_libraries(tst_mainwindow PRIVATE reader_core Qt6::Test Qt6::Widgets)
+target_link_libraries(tst_mainwindow PRIVATE reader_core Qt6::Test Qt6::Widgets Qt6::Network)
 add_test(NAME mainwindow COMMAND tst_mainwindow)
 set_tests_properties(mainwindow PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
@@ -140,9 +142,10 @@ qt_add_executable(tst_mainwindow2
     src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
     src/app/AdvancedSettingsDialog.cpp src/app/AdvancedSettingsDialog.h
     src/app/TagsetDialog.cpp src/app/TagsetDialog.h
+    src/app/RemoteControl.cpp src/app/RemoteControl.h
 )
 target_include_directories(tst_mainwindow2 PRIVATE src)
-target_link_libraries(tst_mainwindow2 PRIVATE reader_core Qt6::Test Qt6::Widgets)
+target_link_libraries(tst_mainwindow2 PRIVATE reader_core Qt6::Test Qt6::Widgets Qt6::Network)
 add_test(NAME mainwindow2 COMMAND tst_mainwindow2)
 set_tests_properties(mainwindow2 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
@@ -184,9 +187,10 @@ qt_add_executable(tst_window
     src/app/BasicSettingsDialog.cpp src/app/BasicSettingsDialog.h
     src/app/AdvancedSettingsDialog.cpp src/app/AdvancedSettingsDialog.h
     src/app/TagsetDialog.cpp src/app/TagsetDialog.h
+    src/app/RemoteControl.cpp src/app/RemoteControl.h
 )
 target_include_directories(tst_window PRIVATE src)
-target_link_libraries(tst_window PRIVATE reader_core Qt6::Test Qt6::Widgets)
+target_link_libraries(tst_window PRIVATE reader_core Qt6::Test Qt6::Widgets Qt6::Network)
 add_test(NAME window COMMAND tst_window)
 set_tests_properties(window PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 

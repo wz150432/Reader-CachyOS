@@ -10,6 +10,7 @@ private slots:
     void updatesExistingReaderBlock();
     void appendsWhenMissing();
     void invalidOpacityRejected();
+    void globalHideBindAddAndRemove();
 };
 
 void TestNiriConfig::updatesExistingReaderBlock()
@@ -51,6 +52,21 @@ void TestNiriConfig::invalidOpacityRejected()
     QVERIFY(!patchReaderOpacity(&content, -0.1));
     QVERIFY(!patchReaderOpacity(&content, 1.5));
     QVERIFY(!patchReaderOpacity(nullptr, 0.5));
+}
+
+void TestNiriConfig::globalHideBindAddAndRemove()
+{
+    QString content = QStringLiteral(
+        "binds {\n"
+        "    Mod+Q { close-window; }\n"
+        "}\n");
+    QVERIFY(patchReaderGlobalHide(&content, true, QStringLiteral("/tmp/reader")));
+    QVERIFY(content.contains(QStringLiteral("Ctrl+Shift+H")));
+    QVERIFY(content.contains(QStringLiteral("\"/tmp/reader\"")));
+    QVERIFY(content.contains(QStringLiteral("--toggle-hide")));
+    QVERIFY(patchReaderGlobalHide(&content, false, QStringLiteral("/tmp/reader")));
+    QVERIFY(!content.contains(QStringLiteral("--toggle-hide")));
+    QVERIFY(!content.contains(QStringLiteral("reader-global-hide")));
 }
 
 QTEST_APPLESS_MAIN(TestNiriConfig)

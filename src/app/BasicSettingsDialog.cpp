@@ -30,6 +30,10 @@ BasicSettingsDialog::BasicSettingsDialog(Settings *settings, QWidget *parent)
     m_minimizeToTray->setChecked(m_settings->behavior.minimizeToTray);
     m_doubleClickHide = new QCheckBox(QStringLiteral("左右键同时按下隐藏窗口"), this);
     m_doubleClickHide->setChecked(m_settings->behavior.doubleClickHide);
+    m_globalHide = new QCheckBox(QStringLiteral("使用 niri 全局快捷键隐藏窗口（Ctrl+Shift+H）"), this);
+    m_globalHide->setChecked(m_settings->behavior.globalHideEnabled);
+    m_globalHidePopup = new QCheckBox(QStringLiteral("全局隐藏/恢复时显示提示弹窗"), this);
+    m_globalHidePopup->setChecked(m_settings->behavior.globalHidePopup);
 
     auto *form = new QFormLayout;
     form->addRow(QStringLiteral("自动翻页间隔"), m_intervalSpin);
@@ -37,6 +41,8 @@ BasicSettingsDialog::BasicSettingsDialog(Settings *settings, QWidget *parent)
     form->addRow(QStringLiteral("滚动速度（像素/步）"), m_scrollStepSpin);
     form->addRow(QString(), m_minimizeToTray);
     form->addRow(QString(), m_doubleClickHide);
+    form->addRow(QString(), m_globalHide);
+    form->addRow(QString(), m_globalHidePopup);
 
     auto *ok = new QPushButton(QStringLiteral("确定"), this);
     auto *cancel = new QPushButton(QStringLiteral("取消"), this);
@@ -58,6 +64,8 @@ void BasicSettingsDialog::accept()
     m_settings->behavior.scrollStep = m_scrollStepSpin->value();
     m_settings->behavior.minimizeToTray = m_minimizeToTray->isChecked();
     m_settings->behavior.doubleClickHide = m_doubleClickHide->isChecked();
+    m_settings->behavior.globalHideEnabled = m_globalHide->isChecked();
+    m_settings->behavior.globalHidePopup = m_globalHidePopup->isChecked();
     m_settings->save();
     QDialog::accept();
 }

@@ -24,6 +24,8 @@ void TestSettings3::behaviorRoundtrip()
     s.behavior.autoPageScrollMode = true;
     s.behavior.scrollStep = 3;
     s.behavior.minimizeToTray = true;
+    s.behavior.globalHideEnabled = true;
+    s.behavior.globalHidePopup = false;
     s.save();
     Settings t(path);
     t.load();
@@ -31,6 +33,8 @@ void TestSettings3::behaviorRoundtrip()
     QVERIFY(t.behavior.autoPageScrollMode);
     QCOMPARE(t.behavior.scrollStep, 3);
     QVERIFY(t.behavior.minimizeToTray);
+    QVERIFY(t.behavior.globalHideEnabled);
+    QVERIFY(!t.behavior.globalHidePopup);
 }
 
 void TestSettings3::tagsRoundtrip()
@@ -59,6 +63,8 @@ void TestSettings3::defaultsFilled()
     QVERIFY(!s.behavior.autoPageScrollMode);
     QCOMPARE(s.behavior.scrollStep, 1);
     QVERIFY(!s.behavior.minimizeToTray);
+    QVERIFY(!s.behavior.globalHideEnabled);
+    QVERIFY(s.behavior.globalHidePopup);
     QVERIFY(s.tags.isEmpty());
     QVERIFY(s.chapterRegex.isEmpty());
 }

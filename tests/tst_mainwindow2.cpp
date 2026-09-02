@@ -17,6 +17,7 @@ private slots:
     void resetSettingsRestoresDefaults();
     void clearRecentMenuClearsRecentList();
     void openMenuShowsRecentAndNewBook();
+    void remoteToggleHidesAndRestores();
 };
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -110,6 +111,21 @@ void TestMainWindow2::openMenuShowsRecentAndNewBook()
     }
     QVERIFY(hasRecent);
     QVERIFY(hasNew);
+}
+
+void TestMainWindow2::remoteToggleHidesAndRestores()
+{
+    QTemporaryDir dir;
+    Settings seed(Settings::defaultConfigFilePath());
+    seed.load();
+    seed.behavior.globalHidePopup = false;
+    seed.save();
+    MainWindow w;
+    w.show();
+    w.handleRemoteCommand(QStringLiteral("toggle-hide"));
+    QVERIFY(!w.isVisible());
+    w.handleRemoteCommand(QStringLiteral("toggle-hide"));
+    QVERIFY(w.isVisible());
 }
 
 int main(int argc, char *argv[])

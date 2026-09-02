@@ -3,6 +3,7 @@
 #include <QSurfaceFormat>
 #include <QStyleFactory>
 #include "app/MainWindow.h"
+#include "app/RemoteControl.h"
 
 int main(int argc, char *argv[])
 {
@@ -10,6 +11,17 @@ int main(int argc, char *argv[])
     fmt.setAlphaBufferSize(8);
     QSurfaceFormat::setDefaultFormat(fmt);
     QApplication app(argc, argv);
+    const QStringList args = app.arguments();
+    static const QStringList remoteCommands = {
+        QStringLiteral("--toggle-hide"),
+        QStringLiteral("--hide"),
+        QStringLiteral("--show")
+    };
+    if (args.size() >= 2 && remoteCommands.contains(args.at(1))) {
+        QString error;
+        if (reader::RemoteControl::sendCommand(args.at(1).mid(2), &error))
+            return 0;
+    }
     app.setApplicationName(QStringLiteral("Reader"));
     app.setOrganizationName(QStringLiteral("Reader"));
     app.setDesktopFileName(QStringLiteral("reader.desktop"));

@@ -22,6 +22,7 @@ private slots:
     void altHShortcutHidesWindow();
     void dualButtonPressHidesWindow();
     void noMinimumSizeLimit();
+    void shrinksBelowOldLimit();
     void fullTransparencyMakesChromeTransparent();
 };
 
@@ -108,6 +109,16 @@ void TestWindow::noMinimumSizeLimit()
     MainWindow w;
     QCOMPARE(w.minimumWidth(), 0);
     QCOMPARE(w.minimumHeight(), 0);
+}
+
+void TestWindow::shrinksBelowOldLimit()
+{
+    MainWindow w;
+    w.show();
+    w.resize(240, 180);
+    QTest::qWait(30);
+    QVERIFY(w.width() < 480);
+    QVERIFY(w.height() < 320);
 }
 
 void TestWindow::fullTransparencyMakesChromeTransparent()

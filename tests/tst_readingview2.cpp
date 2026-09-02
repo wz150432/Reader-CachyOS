@@ -7,6 +7,9 @@
 #include <QSignalSpy>
 #include <QUrl>
 #include <QDropEvent>
+#include <QFontMetricsF>
+#include <QImage>
+#include <QPainter>
 #include "app/ReadingView.h"
 #include "core/Book.h"
 
@@ -25,6 +28,7 @@ private slots:
     void translucentBackgroundEnabled();
     void dropLocalFileEmitsPath();
     void findNextWholeBookCrossesChapters();
+    void wrappedParagraphRenderingKeepsLineGaps();
 };
 
 static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
@@ -206,6 +210,69 @@ void TestReadingView2::findNextWholeBookCrossesChapters()
     QVERIFY(view.findNext(QStringLiteral("独一无二的线索词")));
     QCOMPARE(view.currentChapter(), 5);
     QVERIFY(view.currentMatchStart() >= 0);
+}
+
+void TestReadingView2::wrappedParagraphRenderingKeepsLineGaps()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("paragraphs.txt"));
+    QFile f(path);
+    if (!f.open(QIODevice::WriteOnly))
+        QFAIL("cannot create book file");
+    const QString line = QStringLiteral("一二三四五六七八九十天地玄黄宇宙洪荒").repeated(12);
+    QString text;
+    for (int i = 0; i < 4; ++i)
+        text += line + QLatin1Char('\n');
+    f.write(text.toUtf8());
+    f.close();
+
+    QString err;
+    auto book = Book::create(path, &err);
+    QVERIFY(book);
+    ReadingView view;
+    DisplaySettings s;
+    s.font = QFont(QStringLiteral("Noto Sans CJK SC"), 12);
+    s.lineGap = 4;
+    s.paragraphGap = 8;
+    s.compressBlankLines = true;
+    s.wordWrap = true;
+    view.setSettings(s);
+    view.setBook(book);
+    view.resize(360, 220);
+    QVERIFY(view.pageCount() > 1);
+
+    const int normalBand = QFontMetricsF(s.font).height();
+    int maxBand = 0;
+    QImage img(view.size(), QImage::Format_ARGB32);
+    for (int pg = 0; pg < view.pageCount(); ++pg) {
+        view.goToPage(pg);
+        img.fill(Qt::white);
+        QPainter painter(&img);
+        view.render(&painter);
+        painter.end();
+
+        int bandStart = -1;
+        for (int y = 0; y < img.height(); ++y) {
+            bool ink = false;
+            for (int x = 0; x < img.width(); ++x) {
+                const QColor c = img.pixelColor(x, y);
+                if (c.red() < 128 && c.green() < 128 && c.blue() < 128) {
+                    ink = true;
+                    break;
+                }
+            }
+            if (ink && bandStart < 0) {
+                bandStart = y;
+            } else if (!ink && bandStart >= 0) {
+                maxBand = qMax(maxBand, y - bandStart);
+                bandStart = -1;
+            }
+        }
+        if (bandStart >= 0)
+            maxBand = qMax(maxBand, img.height() - bandStart);
+    }
+    QVERIFY2(maxBand <= normalBand,
+             qPrintable(QStringLiteral("overlapping text band: %1 px").arg(maxBand)));
 }
 
 QTEST_MAIN(TestReadingView2)

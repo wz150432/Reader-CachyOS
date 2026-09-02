@@ -173,7 +173,8 @@ qreal ReadingView::currentPageContentHeight() const
     if (content.paragraphIndex.isEmpty())
         return 0.0;
     const QTextLayout &layout = m_page.paragraph(content.paragraphIndex.last());
-    return content.positions.last().y() + layout.lineAt(content.lineIndex.last()).height();
+    return content.positions.last().y() + layout.lineAt(content.lineIndex.last()).height()
+        + m_settings.lineGap;
 }
 
 qreal ReadingView::currentLineStep() const
@@ -276,8 +277,11 @@ void ReadingView::paintEvent(QPaintEvent *)
     addLines(content, -offset);
     if (offset > 0.0 && currentPage + 1 < m_page.pageCount())
         addLines(m_page.content(currentPage + 1), currentHeight - offset);
-    for (const DisplayLine &line : lines)
-        line.layout->lineAt(line.lineIndex).draw(&painter, line.pos);
+    for (const DisplayLine &line : lines) {
+        const QTextLine tl = line.layout->lineAt(line.lineIndex);
+        tl.draw(&painter, QPointF(line.pos.x() - tl.position().x(),
+                                  line.pos.y() - tl.position().y()));
+    }
     if (m_matchStart >= 0 && m_matchEnd > m_matchStart) {
         for (const DisplayLine &line : lines) {
             const QPair<int, int> range = line.charRange;

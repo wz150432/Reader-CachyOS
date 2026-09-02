@@ -1,6 +1,7 @@
 #include <QtTest>
 #include <QApplication>
 #include <QAction>
+#include <QDateTime>
 #include <QTemporaryDir>
 #include <QFile>
 #include <QMenu>
@@ -18,6 +19,7 @@ private slots:
     void clearRecentMenuClearsRecentList();
     void openMenuShowsRecentAndNewBook();
     void remoteToggleHidesAndRestores();
+    void openLastReadRestoresRecentBook();
 };
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -126,6 +128,31 @@ void TestMainWindow2::remoteToggleHidesAndRestores()
     QVERIFY(!w.isVisible());
     w.handleRemoteCommand(QStringLiteral("toggle-hide"));
     QVERIFY(w.isVisible());
+}
+
+void TestMainWindow2::openLastReadRestoresRecentBook()
+{
+    QTemporaryDir dir;
+    MainWindow w;
+    w.show();
+    const QString path = makeTxt(dir, QStringLiteral("last_book.txt"));
+    w.openBook(path);
+    QTest::qWait(30);
+    Cache c(Cache::defaultCacheFilePath());
+    c.load();
+    QVERIFY(!c.recentFiles().isEmpty());
+
+    Cache seed(Cache::defaultCacheFilePath());
+    seed.load();
+    seed.clearRecent();
+    seed.upsertProgress({path, 1, 0, QDateTime::currentSecsSinceEpoch()});
+    seed.save();
+
+    MainWindow resume;
+    resume.openLastRead();
+    QVERIFY(resume.tocItemCount() > 0);
+    QCOMPARE(resume.currentChapter(), 1);
+    QVERIFY(resume.currentBookTitle().contains(QStringLiteral("第2章")));
 }
 
 int main(int argc, char *argv[])

@@ -42,6 +42,15 @@ int main(int argc, char *argv[])
     pal.setColor(QPalette::ToolTipText, QColor(0x33, 0x33, 0x33));
     app.setPalette(pal);
     reader::MainWindow w;
+    QStringList openFiles;
+    for (int i = 1; i < args.size(); ++i) {
+        if (!args.at(i).startsWith(QLatin1Char('-')))
+            openFiles.append(args.at(i));
+    }
+    if (openFiles.isEmpty())
+        w.openLastRead();
+    else
+        w.openBook(openFiles.first());
     w.resize(960, 720);
     w.show();
     return app.exec();

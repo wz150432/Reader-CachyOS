@@ -207,20 +207,28 @@ void MainWindow::openBook(const QString &path)
         QMessageBox::warning(this, QStringLiteral("无法打开"), err);
         return;
     }
+    const auto saved = m_cache.progress(path);
     saveProgress();
     m_book = std::move(book);
     m_currentPath = path;
     m_view->setBook(m_book);
     populateToc();
-    if (const auto p = m_cache.progress(path)) {
-        m_view->goToChapter(p->chapterIndex);
-        m_view->goToPage(p->pageIndex);
+    if (saved) {
+        m_view->goToChapter(saved->chapterIndex);
+        m_view->goToPage(saved->pageIndex);
     }
     updateTitle();
     m_view->setFocus();
     m_view->setKeyset(m_settings.keyset);
     applyWindowOpacity();
     refreshOpenMenu();
+}
+
+void MainWindow::openLastRead()
+{
+    const QStringList recent = m_cache.recentFiles();
+    if (!recent.isEmpty())
+        openBook(recent.first());
 }
 
 void MainWindow::populateToc()

@@ -22,6 +22,7 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     void openBook(const QString &path);
+    void openLastRead();
     QString currentBookTitle() const;
     int tocItemCount() const;
     void addBookmarkForCurrentBook();

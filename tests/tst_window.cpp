@@ -1,6 +1,8 @@
 #include <QtTest>
 #include <QApplication>
+#include <QDockWidget>
 #include <QMenuBar>
+#include <QWheelEvent>
 #include <QTemporaryDir>
 #include "app/MainWindow.h"
 #include "app/ReadingView.h"
@@ -19,6 +21,8 @@ private slots:
     void autopageReflectsSettings();
     void altHShortcutHidesWindow();
     void dualButtonPressHidesWindow();
+    void noMinimumSizeLimit();
+    void fullTransparencyMakesChromeTransparent();
 };
 
 void TestWindow::hideAndShow()
@@ -97,6 +101,29 @@ void TestWindow::dualButtonPressHidesWindow()
     QTest::mousePress(view, Qt::RightButton);
     QVERIFY(!w.isVisible());
     w.show();
+}
+
+void TestWindow::noMinimumSizeLimit()
+{
+    MainWindow w;
+    QCOMPARE(w.minimumWidth(), 0);
+    QCOMPARE(w.minimumHeight(), 0);
+}
+
+void TestWindow::fullTransparencyMakesChromeTransparent()
+{
+    MainWindow w;
+    w.show();
+    auto *view = qobject_cast<ReadingView *>(w.centralWidget());
+    QVERIFY(view);
+    QWheelEvent wheel(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, 120),
+                      Qt::NoButton, Qt::ControlModifier | Qt::ShiftModifier,
+                      Qt::NoScrollPhase, false);
+    QApplication::sendEvent(view, &wheel);
+    QVERIFY(w.menuBar()->styleSheet().contains(QStringLiteral("transparent")));
+    auto *dock = w.findChild<QDockWidget *>(QStringLiteral("tocDock"));
+    QVERIFY(dock);
+    QVERIFY(dock->styleSheet().contains(QStringLiteral("transparent")));
 }
 
 int main(int argc, char *argv[])

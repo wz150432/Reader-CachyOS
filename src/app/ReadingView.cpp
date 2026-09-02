@@ -151,11 +151,15 @@ void ReadingView::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
     const qreal bgOpacity = m_settings.windowAlpha / 255.0;
+    painter.setCompositionMode(QPainter::CompositionMode_Clear);
+    painter.fillRect(rect(), Qt::transparent);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     if (!m_bgPixmap.isNull())
         painter.setOpacity(bgOpacity);
     QColor bg = m_settings.bgColor;
     bg.setAlpha(m_settings.windowAlpha);
-    painter.fillRect(rect(), bg);
+    if (bg.alpha() > 0)
+        painter.fillRect(rect(), bg);
     if (!m_bgPixmap.isNull()) {
         painter.drawPixmap(rect(), m_bgPixmap);
         painter.setOpacity(1.0);

@@ -3,6 +3,7 @@
 #include <QAction>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QMenu>
 #include "app/MainWindow.h"
 #include "core/Cache.h"
 
@@ -15,6 +16,7 @@ private slots:
     void addBookmarkPersists();
     void resetSettingsRestoresDefaults();
     void clearRecentMenuClearsRecentList();
+    void openMenuShowsRecentAndNewBook();
 };
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -86,6 +88,28 @@ void TestMainWindow2::clearRecentMenuClearsRecentList()
     Cache d(Cache::defaultCacheFilePath());
     d.load();
     QVERIFY(d.recentFiles().isEmpty());
+}
+
+void TestMainWindow2::openMenuShowsRecentAndNewBook()
+{
+    QTemporaryDir dir;
+    MainWindow w;
+    w.show();
+    const QString path = makeTxt(dir, QStringLiteral("recent_book.txt"));
+    w.openBook(path);
+    QTest::qWait(30);
+    QMenu *open = w.findChild<QMenu *>(QStringLiteral("openMenu"));
+    QVERIFY(open);
+    bool hasRecent = false;
+    bool hasNew = false;
+    for (QAction *action : open->actions()) {
+        if (action->toolTip() == path)
+            hasRecent = true;
+        if (action->objectName() == QStringLiteral("actOpenNew"))
+            hasNew = true;
+    }
+    QVERIFY(hasRecent);
+    QVERIFY(hasNew);
 }
 
 int main(int argc, char *argv[])

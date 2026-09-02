@@ -8,6 +8,7 @@
 
 class QTreeWidget;
 class QLineEdit;
+class QMenu;
 class QSystemTrayIcon;
 
 namespace reader {
@@ -49,6 +50,9 @@ private slots:
 private:
     void buildMenus();
     void populateToc();
+    void populateOpenMenu(QMenu *menu);
+    void refreshOpenMenu();
+    void chooseNewBook();
     void updateTitle();
     void saveProgress();
     void openBookmarkList();

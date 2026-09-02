@@ -18,6 +18,7 @@
 #include <QEvent>
 #include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -31,6 +32,7 @@
 #include <QSpinBox>
 #include <QStandardPaths>
 #include <QSystemTrayIcon>
+#include <QTimer>
 #include <QToolTip>
 #include <QToolBar>
 #include <QTreeWidget>
@@ -89,7 +91,6 @@ MainWindow::MainWindow(QWidget *parent)
     buildMenus();
     updateTitle();
     resize(960, 720);
-    setMinimumSize(480, 320);
     applyWindowOpacity();
     createTrayIcon();
 }
@@ -97,16 +98,14 @@ MainWindow::MainWindow(QWidget *parent)
 void MainWindow::buildMenus()
 {
     QMenu *file = menuBar()->addMenu(QStringLiteral("文件"));
-    QAction *open = file->addAction(QStringLiteral("打开(&O)"));
-    open->setObjectName(QStringLiteral("actOpen"));
-    open->setShortcut(QKeySequence::Open);
-    connect(open, &QAction::triggered, this, [this] {
-        const QString path = QFileDialog::getOpenFileName(
-            this, QStringLiteral("打开"), QString(),
-            QStringLiteral("书籍文件 (*.txt);;所有文件 (*)"));
-        if (!path.isEmpty())
-            openBook(path);
+    QMenu *openMenu = file->addMenu(QStringLiteral("打开(&O)"));
+    openMenu->setObjectName(QStringLiteral("openMenu"));
+    openMenu->menuAction()->setObjectName(QStringLiteral("actOpen"));
+    openMenu->menuAction()->setShortcut(QKeySequence::Open);
+    connect(openMenu, &QMenu::aboutToShow, this, [this, openMenu] {
+        populateOpenMenu(openMenu);
     });
+    populateOpenMenu(openMenu);
     QAction *clearRecent = file->addAction(QStringLiteral("清空(&C)"));
     clearRecent->setObjectName(QStringLiteral("actClearRecent"));
     connect(clearRecent, &QAction::triggered, this, &MainWindow::clearRecentList);
@@ -215,6 +214,7 @@ void MainWindow::openBook(const QString &path)
     m_view->setFocus();
     m_view->setKeyset(m_settings.keyset);
     applyWindowOpacity();
+    refreshOpenMenu();
 }
 
 void MainWindow::populateToc()
@@ -228,6 +228,50 @@ void MainWindow::populateToc()
         item->setText(0, chapters.at(i).title);
         item->setData(0, Qt::UserRole, i);
     }
+}
+
+void MainWindow::populateOpenMenu(QMenu *menu)
+{
+    menu->clear();
+    QAction *header = menu->addAction(QStringLiteral("最近阅读"));
+    header->setEnabled(false);
+    const QStringList recent = m_cache.recentFiles();
+    if (recent.isEmpty()) {
+        QAction *none = menu->addAction(QStringLiteral("暂无最近阅读"));
+        none->setEnabled(false);
+    } else {
+        const int count = qMin(recent.size(), 10);
+        for (int i = 0; i < count; ++i) {
+            const QString path = recent.at(i);
+            QAction *item = menu->addAction(QFileInfo(path).completeBaseName());
+            item->setToolTip(path);
+            item->setStatusTip(path);
+            connect(item, &QAction::triggered, this, [this, path] {
+                openBook(path);
+            });
+        }
+    }
+    menu->addSeparator();
+    QAction *newBook = menu->addAction(QStringLiteral("打开新书..."));
+    newBook->setObjectName(QStringLiteral("actOpenNew"));
+    connect(newBook, &QAction::triggered, this, &MainWindow::chooseNewBook);
+}
+
+void MainWindow::refreshOpenMenu()
+{
+    QTimer::singleShot(0, this, [this] {
+        if (QMenu *menu = findChild<QMenu *>(QStringLiteral("openMenu")))
+            populateOpenMenu(menu);
+    });
+}
+
+void MainWindow::chooseNewBook()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("打开新书"), QString(),
+        QStringLiteral("书籍文件 (*.txt);;所有文件 (*)"));
+    if (!path.isEmpty())
+        openBook(path);
 }
 
 void MainWindow::onChapterChanged(int index)
@@ -459,6 +503,7 @@ void MainWindow::clearRecentList()
 {
     m_cache.clearRecent();
     m_cache.save();
+    refreshOpenMenu();
 }
 
 QString MainWindow::currentBookTitle() const
@@ -562,6 +607,26 @@ void MainWindow::applyWindowOpacity()
     setWindowOpacity(1.0);
     if (!m_view)
         return;
+    const bool fullyTransparent = m_settings.display.windowAlpha == 0;
+    if (menuBar()) {
+        menuBar()->setStyleSheet(fullyTransparent
+            ? QStringLiteral("QMenuBar { background: transparent; }")
+            : QString());
+    }
+    const QString toolbarStyle = fullyTransparent
+        ? QStringLiteral("QToolBar { background: transparent; }")
+        : QString();
+    const QList<QToolBar *> toolbars = findChildren<QToolBar *>();
+    for (QToolBar *bar : toolbars)
+        bar->setStyleSheet(toolbarStyle);
+    const QString dockStyle = fullyTransparent
+        ? QStringLiteral("QDockWidget { background: transparent; }"
+                         "QDockWidget::title { background: transparent; }"
+                         "QTreeWidget { background: transparent; }")
+        : QString();
+    const QList<QDockWidget *> docks = findChildren<QDockWidget *>();
+    for (QDockWidget *dock : docks)
+        dock->setStyleSheet(dockStyle);
     m_view->update();
     if (!QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
         return;

@@ -55,6 +55,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_view, &ReadingView::searchRequested, this, &MainWindow::onSearchRequested);
     connect(m_view, &ReadingView::jumpRequested, this, &MainWindow::onJumpRequested);
     connect(m_view, &ReadingView::bookmarkRequested, this, &MainWindow::onBookmarkRequested);
+    connect(m_view, &ReadingView::fileDropRequested, this, &MainWindow::openBook);
     connect(m_view, &ReadingView::displaySettingsChanged, this, &MainWindow::onDisplaySettingsChanged);
 
     auto *dock = new QDockWidget(QStringLiteral("目录"), this);

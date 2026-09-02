@@ -1,8 +1,13 @@
 #include "app/ReadingView.h"
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QFileInfo>
 #include <QKeyEvent>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
+#include <QUrl>
 #include <QWheelEvent>
 
 namespace {
@@ -213,6 +218,25 @@ void ReadingView::mousePressEvent(QMouseEvent *event)
         update();
     }
     QWidget::mousePressEvent(event);
+}
+
+void ReadingView::dragEnterEvent(QDragEnterEvent *event)
+{
+    const QList<QUrl> urls = event->mimeData()->urls();
+    if (urls.size() == 1 && urls.first().isLocalFile())
+        event->acceptProposedAction();
+}
+
+void ReadingView::dropEvent(QDropEvent *event)
+{
+    const QList<QUrl> urls = event->mimeData()->urls();
+    if (urls.size() == 1 && urls.first().isLocalFile()) {
+        const QString path = urls.first().toLocalFile();
+        if (QFileInfo(path).isFile()) {
+            emit fileDropRequested(path);
+            event->acceptProposedAction();
+        }
+    }
 }
 
 void ReadingView::wheelEvent(QWheelEvent *event)

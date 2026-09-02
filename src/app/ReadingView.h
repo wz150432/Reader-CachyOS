@@ -51,6 +51,7 @@ signals:
     void searchRequested();
     void jumpRequested();
     void bookmarkRequested();
+    void fileDropRequested(const QString &path);
     void autoPageRequested();
     void displaySettingsChanged(const reader::DisplaySettings &settings);
     void behaviorChanged(const reader::BehaviorSettings &behavior);
@@ -61,6 +62,8 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
     void loadChapter();

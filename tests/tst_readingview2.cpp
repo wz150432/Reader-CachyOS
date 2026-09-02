@@ -2,7 +2,11 @@
 #include <QApplication>
 #include <QTemporaryDir>
 #include <QFile>
+#include <QDragEnterEvent>
+#include <QMimeData>
 #include <QSignalSpy>
+#include <QUrl>
+#include <QDropEvent>
 #include "app/ReadingView.h"
 #include "core/Book.h"
 
@@ -19,6 +23,7 @@ private slots:
     void ctrlWheelAdjustsAlpha();
     void ctrlShiftWheelSnapsAlpha();
     void translucentBackgroundEnabled();
+    void dropLocalFileEmitsPath();
 };
 
 static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
@@ -161,6 +166,29 @@ void TestReadingView2::translucentBackgroundEnabled()
 {
     ReadingView view;
     QVERIFY(view.testAttribute(Qt::WA_TranslucentBackground));
+}
+
+void TestReadingView2::dropLocalFileEmitsPath()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("book.txt"));
+    QFile f(path);
+    QVERIFY(f.open(QIODevice::WriteOnly));
+    f.write("内容\n");
+    f.close();
+
+    ReadingView view;
+    view.resize(400, 500);
+    view.show();
+    QSignalSpy spy(&view, &ReadingView::fileDropRequested);
+    QMimeData mime;
+    mime.setUrls({QUrl::fromLocalFile(path)});
+    QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&view, &enter);
+    QDropEvent event(QPointF(10, 10), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&view, &event);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.takeFirst().at(0).toString(), path);
 }
 
 QTEST_MAIN(TestReadingView2)

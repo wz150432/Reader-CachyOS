@@ -211,6 +211,24 @@ void ReadingView::mousePressEvent(QMouseEvent *event)
 void ReadingView::wheelEvent(QWheelEvent *event)
 {
     const int delta = event->angleDelta().y();
+    if (event->modifiers() & Qt::ControlModifier) {
+        int alpha = m_settings.windowAlpha;
+        if (event->modifiers() & Qt::ShiftModifier) {
+            // Ctrl+Shift+滚轮：向上基本全透明，向下完全不透明
+            alpha = delta > 0 ? 1 : 255;
+        } else {
+            // Ctrl+滚轮：向上更透明，向下更不透明
+            alpha += delta > 0 ? -10 : 10;
+            alpha = qBound(1, alpha, 255);
+        }
+        if (alpha != m_settings.windowAlpha) {
+            m_settings.windowAlpha = alpha;
+            emit displaySettingsChanged(m_settings);
+            update();
+        }
+        event->accept();
+        return;
+    }
     if (m_page.scrollLines(delta < 0 ? 1 : -1)) {
         emit pageChanged(m_page.currentPage());
         update();

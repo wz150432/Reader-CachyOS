@@ -16,6 +16,8 @@ private slots:
     void wheelScrollsByLine();
     void findNextJumpsAndHighlights();
     void jumpToBookProgressWholeBook();
+    void ctrlWheelAdjustsAlpha();
+    void ctrlShiftWheelSnapsAlpha();
 };
 
 static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
@@ -110,6 +112,48 @@ void TestReadingView2::jumpToBookProgressWholeBook()
     QCOMPARE(view.currentChapter(), book->chapters().size() - 1);
     view.jumpToBookProgress(0.5);
     QVERIFY(view.currentChapter() > 0);
+}
+
+void TestReadingView2::ctrlWheelAdjustsAlpha()
+{
+    ReadingView view;
+    view.setSettings(DisplaySettings());
+    QSignalSpy spy(&view, &ReadingView::displaySettingsChanged);
+    // Ctrl+滚轮向上：更透明
+    QWheelEvent up(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, 120),
+                   Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(&view, &up);
+    QCOMPARE(spy.count(), 1);
+    const auto gotUp = spy.last().at(0).value<DisplaySettings>();
+    QCOMPARE(gotUp.windowAlpha, 245);
+    // Ctrl+滚轮向下：更不透明
+    QWheelEvent down(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, -120),
+                     Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(&view, &down);
+    QCOMPARE(spy.count(), 2);
+    const auto gotDown = spy.last().at(0).value<DisplaySettings>();
+    QCOMPARE(gotDown.windowAlpha, 255);
+}
+
+void TestReadingView2::ctrlShiftWheelSnapsAlpha()
+{
+    ReadingView view;
+    view.setSettings(DisplaySettings());
+    QSignalSpy spy(&view, &ReadingView::displaySettingsChanged);
+    // Ctrl+Shift+滚轮向上：基本全透明
+    QWheelEvent up(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, 120),
+                   Qt::NoButton, Qt::ControlModifier | Qt::ShiftModifier,
+                   Qt::NoScrollPhase, false);
+    QApplication::sendEvent(&view, &up);
+    QCOMPARE(spy.count(), 1);
+    QCOMPARE(spy.last().at(0).value<DisplaySettings>().windowAlpha, 1);
+    // Ctrl+Shift+滚轮向下：完全不透明
+    QWheelEvent down(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, -120),
+                     Qt::NoButton, Qt::ControlModifier | Qt::ShiftModifier,
+                     Qt::NoScrollPhase, false);
+    QApplication::sendEvent(&view, &down);
+    QCOMPARE(spy.count(), 2);
+    QCOMPARE(spy.last().at(0).value<DisplaySettings>().windowAlpha, 255);
 }
 
 QTEST_MAIN(TestReadingView2)

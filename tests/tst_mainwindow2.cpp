@@ -20,6 +20,7 @@ private slots:
     void openMenuShowsRecentAndNewBook();
     void remoteToggleHidesAndRestores();
     void openLastReadRestoresRecentBook();
+    void ctrlOShowsOpenMenu();
 };
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -153,6 +154,17 @@ void TestMainWindow2::openLastReadRestoresRecentBook()
     QVERIFY(resume.tocItemCount() > 0);
     QCOMPARE(resume.currentChapter(), 1);
     QVERIFY(resume.currentBookTitle().contains(QStringLiteral("第2章")));
+}
+
+void TestMainWindow2::ctrlOShowsOpenMenu()
+{
+    MainWindow w;
+    w.show();
+    QTest::keyClick(&w, Qt::Key_O, Qt::ControlModifier);
+    QMenu *open = w.findChild<QMenu *>(QStringLiteral("openMenu"));
+    QVERIFY(open);
+    QVERIFY(open->isVisible());
+    open->close();
 }
 
 int main(int argc, char *argv[])

@@ -55,6 +55,7 @@ private:
     void populateToc();
     void populateOpenMenu(QMenu *menu);
     void refreshOpenMenu();
+    void showOpenMenu();
     void chooseNewBook();
     void updateTitle();
     void saveProgress();

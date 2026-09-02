@@ -23,6 +23,7 @@ void TestSettings::defaultsWhenMissing()
     QCOMPARE(s.display.lineGap, 4);
     QCOMPARE(s.display.bgColor, QColor(Qt::white));
     QVERIFY(s.display.wordWrap);
+    QVERIFY(s.display.compressBlankLines);
 }
 
 void TestSettings::saveLoadRoundtrip()

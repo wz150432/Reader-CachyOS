@@ -19,7 +19,7 @@ struct DisplaySettings
     int lineGap = 4;
     int paragraphGap = 8;
     bool firstLineIndent = true;
-    bool compressBlankLines = false;
+    bool compressBlankLines = true;
     bool chapterPageBreak = false;
     bool wordWrap = true;
     int margin = 24;

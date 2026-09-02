@@ -71,6 +71,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_toc->setHeaderHidden(true);
     dock->setWidget(m_toc);
     addDockWidget(Qt::LeftDockWidgetArea, dock);
+    dock->hide();
     connect(m_toc, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item) {
         m_view->goToChapter(item->data(0, Qt::UserRole).toInt());
     });
@@ -279,6 +280,14 @@ void MainWindow::refreshOpenMenu()
     });
 }
 
+void MainWindow::showOpenMenu()
+{
+    if (QMenu *menu = findChild<QMenu *>(QStringLiteral("openMenu"))) {
+        populateOpenMenu(menu);
+        menu->popup(QCursor::pos());
+    }
+}
+
 void MainWindow::chooseNewBook()
 {
     const QString path = QFileDialog::getOpenFileName(
@@ -398,8 +407,6 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
         KeyAction matched = static_cast<KeyAction>(-1);
         const QList<KeyAction> actions = m_settings.keyset.actions();
         for (const KeyAction a : actions) {
-            if (a == KeyAction::OpenFile || a == KeyAction::Quit)
-                continue;
             if (m_settings.keyset.shortcut(a).matches(seq) == QKeySequence::ExactMatch) {
                 matched = a;
                 break;
@@ -470,9 +477,13 @@ void MainWindow::handleKeyAction(KeyAction a)
     case KeyAction::HideWindow:
         showHideWindow();
         break;
-    case KeyAction::EditMode:
     case KeyAction::OpenFile:
+        showOpenMenu();
+        break;
     case KeyAction::Quit:
+        close();
+        break;
+    case KeyAction::EditMode:
         break;
     }
 }
@@ -692,11 +703,10 @@ void MainWindow::applyWindowOpacity()
     const QList<QToolBar *> toolbars = findChildren<QToolBar *>();
     for (QToolBar *bar : toolbars)
         bar->setStyleSheet(toolbarStyle);
-    const QString dockStyle = fullyTransparent
-        ? QStringLiteral("QDockWidget { background: transparent; }"
-                         "QDockWidget::title { background: transparent; }"
-                         "QTreeWidget { background: transparent; }")
-        : QString();
+    const QString dockStyle = QStringLiteral(
+        "QDockWidget { background: palette(window); }"
+        "QDockWidget::title { background: palette(button); }"
+        "QTreeWidget { background: palette(base); }");
     const QList<QDockWidget *> docks = findChildren<QDockWidget *>();
     for (QDockWidget *dock : docks)
         dock->setStyleSheet(dockStyle);

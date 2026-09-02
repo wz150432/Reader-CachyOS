@@ -24,6 +24,7 @@ private slots:
     void noMinimumSizeLimit();
     void shrinksBelowOldLimit();
     void fullTransparencyMakesChromeTransparent();
+    void tocHiddenByDefault();
 };
 
 void TestWindow::hideAndShow()
@@ -138,7 +139,17 @@ void TestWindow::fullTransparencyMakesChromeTransparent()
     QVERIFY(w.menuBar()->styleSheet().contains(QStringLiteral("transparent")));
     auto *dock = w.findChild<QDockWidget *>(QStringLiteral("tocDock"));
     QVERIFY(dock);
-    QVERIFY(dock->styleSheet().contains(QStringLiteral("transparent")));
+    QVERIFY(!dock->styleSheet().contains(QStringLiteral("transparent")));
+    QVERIFY(dock->styleSheet().contains(QStringLiteral("palette(window)")));
+}
+
+void TestWindow::tocHiddenByDefault()
+{
+    MainWindow w;
+    w.show();
+    auto *dock = w.findChild<QDockWidget *>(QStringLiteral("tocDock"));
+    QVERIFY(dock);
+    QVERIFY(!dock->isVisible());
 }
 
 int main(int argc, char *argv[])

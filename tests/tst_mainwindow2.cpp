@@ -1,5 +1,6 @@
 #include <QtTest>
 #include <QApplication>
+#include <QAction>
 #include <QTemporaryDir>
 #include <QFile>
 #include "app/MainWindow.h"
@@ -13,6 +14,7 @@ class TestMainWindow2 : public QObject
 private slots:
     void addBookmarkPersists();
     void resetSettingsRestoresDefaults();
+    void clearRecentMenuClearsRecentList();
 };
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -56,6 +58,29 @@ void TestMainWindow2::resetSettingsRestoresDefaults()
     s.load();
     QCOMPARE(s.keyset.shortcut(KeyAction::Search), QKeySequence(QStringLiteral("Ctrl+F")));
     QCOMPARE(s.display.bgColor, QColor(Qt::white));
+}
+
+void TestMainWindow2::clearRecentMenuClearsRecentList()
+{
+    QTemporaryDir dir;
+    MainWindow w;
+    w.show();
+    const QString path = makeTxt(dir, QStringLiteral("recent.txt"));
+    w.openBook(path);
+    QTest::qWait(30);
+    Cache c(Cache::defaultCacheFilePath());
+    c.load();
+    QVERIFY(!c.recentFiles().isEmpty());
+
+    QAction *clear = w.findChild<QAction *>(QStringLiteral("actClearRecent"));
+    QVERIFY(clear);
+    QVERIFY(clear->isEnabled());
+    clear->trigger();
+    QTest::qWait(30);
+
+    Cache d(Cache::defaultCacheFilePath());
+    d.load();
+    QVERIFY(d.recentFiles().isEmpty());
 }
 
 int main(int argc, char *argv[])

@@ -12,6 +12,7 @@ private slots:
     void upsertAndRoundtrip();
     void recentFilesOrdering();
     void clearAll();
+    void clearRecentKeepsBookmarks();
 };
 
 void TestCache::missingFileIsEmpty()
@@ -76,6 +77,22 @@ void TestCache::clearAll()
     Cache d(path);
     d.load();
     QVERIFY(!d.progress(QStringLiteral("/books/a.txt")).has_value());
+}
+
+void TestCache::clearRecentKeepsBookmarks()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("cache.json"));
+    Cache c(path);
+    c.load();
+    c.upsertProgress({QStringLiteral("/books/a.txt"), 1, 1, 100});
+    c.addBookmark({QStringLiteral("/books/a.txt"), 0, 0, QStringLiteral("标记"), 50});
+    c.clearRecent();
+    c.save();
+    Cache d(path);
+    d.load();
+    QVERIFY(!d.progress(QStringLiteral("/books/a.txt")).has_value());
+    QCOMPARE(d.bookmarks(QStringLiteral("/books/a.txt")).size(), 1);
 }
 
 QTEST_APPLESS_MAIN(TestCache)

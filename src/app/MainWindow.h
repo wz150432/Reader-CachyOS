@@ -32,6 +32,7 @@ public:
     void toggleAutoPage();
     bool autoPageActive() const;
     bool windowHiddenForTest() const { return !isVisible(); }
+    void clearRecentList();
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

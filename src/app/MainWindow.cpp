@@ -101,8 +101,8 @@ void MainWindow::buildMenus()
             openBook(path);
     });
     QAction *clearRecent = file->addAction(QStringLiteral("清空(&C)"));
-    clearRecent->setEnabled(false);
-    clearRecent->setToolTip(QStringLiteral("第三阶段开放"));
+    clearRecent->setObjectName(QStringLiteral("actClearRecent"));
+    connect(clearRecent, &QAction::triggered, this, &MainWindow::clearRecentList);
     QAction *quit = file->addAction(QStringLiteral("退出(&X)"));
     quit->setObjectName(QStringLiteral("actQuit"));
     quit->setShortcut(QKeySequence::Quit);
@@ -438,6 +438,12 @@ void MainWindow::saveProgress()
         return;
     m_cache.upsertProgress({m_currentPath, m_view->currentChapter(), m_view->currentPage(),
                             QDateTime::currentSecsSinceEpoch()});
+    m_cache.save();
+}
+
+void MainWindow::clearRecentList()
+{
+    m_cache.clearRecent();
     m_cache.save();
 }
 

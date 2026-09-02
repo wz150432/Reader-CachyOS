@@ -33,6 +33,7 @@ public:
     std::optional<BookProgress> progress(const QString &filePath) const;
     QStringList recentFiles() const;
     void clearAll();
+    void clearRecent();
     QVector<Bookmark> bookmarks(const QString &filePath) const;
     void addBookmark(const Bookmark &b);
     void removeBookmark(const QString &filePath, qint64 created);

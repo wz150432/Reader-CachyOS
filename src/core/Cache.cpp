@@ -127,6 +127,11 @@ void Cache::clearAll()
     m_bookmarks.clear();
 }
 
+void Cache::clearRecent()
+{
+    m_progress.clear();
+}
+
 QVector<Bookmark> Cache::bookmarks(const QString &filePath) const
 {
     QVector<Bookmark> out;

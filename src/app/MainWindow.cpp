@@ -27,6 +27,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QSaveFile>
@@ -211,6 +212,8 @@ void MainWindow::buildMenus()
 
 void MainWindow::openBook(const QString &path)
 {
+    if (!leaveEditModeIfActive())
+        return;
     QString err;
     auto book = Book::create(path, &err, QRegularExpression(m_settings.chapterRegex));
     if (!book) {
@@ -528,8 +531,91 @@ void MainWindow::handleKeyAction(KeyAction a)
         toggleMouseLeaveHide();
         break;
     case KeyAction::EditMode:
+        toggleEditMode();
         break;
     }
+}
+
+void MainWindow::toggleEditMode()
+{
+    if (editModeActive()) {
+        leaveEditModeIfActive();
+        return;
+    }
+    if (m_currentPath.isEmpty() || !m_book) {
+        QMessageBox::information(this, QStringLiteral("编辑模式"),
+                                 QStringLiteral("请先打开一本书"));
+        return;
+    }
+    QFile f(m_currentPath);
+    if (!f.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, QStringLiteral("无法打开"),
+                             QStringLiteral("无法读取当前文件"));
+        return;
+    }
+    if (!m_editor) {
+        m_editor = new QPlainTextEdit(m_view);
+        m_editor->setObjectName(QStringLiteral("bookEditor"));
+        m_editor->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    }
+    m_editor->setPlainText(QString::fromUtf8(f.readAll()));
+    m_editor->document()->setModified(false);
+    m_editor->setGeometry(m_view->rect());
+    m_editor->raise();
+    m_editor->show();
+    m_editor->setFocus();
+}
+
+bool MainWindow::leaveEditModeIfActive()
+{
+    if (!editModeActive())
+        return true;
+    if (m_editor->document()->isModified()) {
+        const auto choice = QMessageBox::question(
+            this, QStringLiteral("保存修改"),
+            QStringLiteral("编辑内容还没有保存，是否保存？"),
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+            QMessageBox::Save);
+        if (choice == QMessageBox::Cancel)
+            return false;
+        if (choice == QMessageBox::Save)
+            return saveEditMode();
+    }
+    leaveEditMode();
+    return true;
+}
+
+void MainWindow::leaveEditMode()
+{
+    if (!m_editor)
+        return;
+    m_editor->hide();
+    m_view->refreshLayout();
+    m_view->setFocus();
+}
+
+bool MainWindow::saveEditMode()
+{
+    if (!m_editor || m_currentPath.isEmpty())
+        return false;
+    QSaveFile sf(m_currentPath);
+    if (!sf.open(QIODevice::WriteOnly)) {
+        QMessageBox::warning(this, QStringLiteral("保存失败"),
+                             QStringLiteral("无法写入当前文件"));
+        return false;
+    }
+    sf.write(m_editor->toPlainText().toUtf8());
+    if (!sf.commit()) {
+        QMessageBox::warning(this, QStringLiteral("保存失败"),
+                             QStringLiteral("无法写入当前文件"));
+        return false;
+    }
+    const int chapter = m_view->currentChapter();
+    leaveEditMode();
+    openBook(m_currentPath);
+    if (m_book && chapter >= 0 && chapter < m_book->chapters().size())
+        m_view->goToChapter(chapter);
+    return true;
 }
 
 void MainWindow::resetSettings()
@@ -719,6 +805,13 @@ void MainWindow::leaveEvent(QEvent *event)
     QMainWindow::leaveEvent(event);
 }
 
+void MainWindow::resizeEvent(QResizeEvent *event)
+{
+    if (m_editor && m_editor->isVisible())
+        m_editor->setGeometry(m_view->rect());
+    QMainWindow::resizeEvent(event);
+}
+
 void MainWindow::handleRemoteCommand(const QString &command)
 {
     const bool hide = command == QStringLiteral("hide")
@@ -887,6 +980,10 @@ void MainWindow::applyWindowOpacity()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    if (!leaveEditModeIfActive()) {
+        event->ignore();
+        return;
+    }
     saveWindowState();
     saveProgress();
     if (m_settings.behavior.minimizeToTray && m_tray && m_tray->isVisible()) {

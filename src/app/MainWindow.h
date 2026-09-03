@@ -1,6 +1,7 @@
 #pragma once
 #include <QMainWindow>
 #include <QList>
+#include <QPlainTextEdit>
 #include <QRect>
 #include <memory>
 #include "core/Book.h"
@@ -34,6 +35,7 @@ public:
     void quitApplication();
     bool mouseLeaveHideEnabled() const { return m_settings.behavior.mouseLeaveHideEnabled; }
     bool hasSavedWindowGeometry() const { return !m_settings.windowGeometry.isEmpty(); }
+    bool editModeActive() const { return m_editor && m_editor->isVisible(); }
     void applyWindowState();
     void toggleFullscreen();
     void toggleAlwaysOnTop();
@@ -50,6 +52,7 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     void leaveEvent(QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void onChapterChanged(int index);
@@ -79,10 +82,15 @@ private:
     void toggleMouseLeaveHide();
     void applyMouseLeaveHideMode();
     void onMouseWatchTick();
+    void toggleEditMode();
+    void leaveEditMode();
+    bool saveEditMode();
+    bool leaveEditModeIfActive();
     ReadingView *m_view = nullptr;
     QTreeWidget *m_toc = nullptr;
     QLineEdit *m_searchEdit = nullptr;
     QMenu *m_deleteRecentMenu = nullptr;
+    QPlainTextEdit *m_editor = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
     RemoteControl *m_control = nullptr;
     QTimer *m_mouseWatchTimer = nullptr;

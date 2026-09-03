@@ -28,6 +28,7 @@ private slots:
     void progressPercentReflectsCurrentBookPosition();
     void removeRecentMenuDeletesSingleBook();
     void mouseLeaveHideHotkeyToggles();
+    void editModeCtrlEToggles();
 };
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -253,6 +254,20 @@ void TestMainWindow2::mouseLeaveHideHotkeyToggles()
     QVERIFY(w.mouseLeaveHideEnabled());
     QTest::keyClick(&w, Qt::Key_P, Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
     QVERIFY(!w.mouseLeaveHideEnabled());
+}
+
+void TestMainWindow2::editModeCtrlEToggles()
+{
+    QTemporaryDir dir;
+    MainWindow w;
+    w.show();
+    const QString path = makeTxt(dir, QStringLiteral("edit_book.txt"));
+    w.openBook(path);
+    QVERIFY(!w.editModeActive());
+    QTest::keyClick(&w, Qt::Key_E, Qt::ControlModifier);
+    QVERIFY(w.editModeActive());
+    QTest::keyClick(&w, Qt::Key_E, Qt::ControlModifier);
+    QVERIFY(!w.editModeActive());
 }
 
 int main(int argc, char *argv[])

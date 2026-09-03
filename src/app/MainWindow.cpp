@@ -166,6 +166,7 @@ void MainWindow::buildMenus()
             m_view->setBehavior(m_settings.behavior);
             applyMouseLeaveHideMode();
             applyWindowOpacity();
+            // m_leaveHideIgnoreUntil = QDateTime::currentMSecsSinceEpoch() + 1000;
         }
     });
     QAction *advancedAction = settings->addAction(QStringLiteral("高级设置"));
@@ -179,6 +180,7 @@ void MainWindow::buildMenus()
         if (dlg.exec() == QDialog::Accepted) {
             applyKeyset();
             syncGlobalHide();
+            // m_leaveHideIgnoreUntil = QDateTime::currentMSecsSinceEpoch() + 1000;
         }
     });
     QAction *tagsetAction = settings->addAction(QStringLiteral("标签设置"));
@@ -243,6 +245,7 @@ void MainWindow::openBook(const QString &path)
     m_view->setKeyset(m_settings.keyset);
     applyWindowOpacity();
     refreshOpenMenu();
+    // m_leaveHideIgnoreUntil = QDateTime::currentMSecsSinceEpoch() + 1000;
 }
 
 void MainWindow::openLastRead()
@@ -536,7 +539,7 @@ void MainWindow::handleKeyAction(KeyAction a)
         quitApplication();
         break;
     case KeyAction::MouseLeaveHide:
-        toggleMouseLeaveHide();
+        // 鼠标离开隐藏 / Ctrl 恢复功能暂时暂停。
         break;
     case KeyAction::EditMode:
         toggleEditMode();
@@ -709,8 +712,7 @@ void MainWindow::showHideWindow()
         m_hiddenByMouseLeave = false;
         if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
             const bool canRestore = (m_tray && m_tray->isVisible())
-                || m_globalHideBindReady
-                || m_settings.behavior.mouseLeaveHideEnabled;
+                || m_globalHideBindReady;
             if (!canRestore)
                 return;
             hide();
@@ -729,6 +731,7 @@ void MainWindow::showHideWindow()
         raise();
         activateWindow();
         m_view->setFocus();
+        // m_leaveHideIgnoreUntil = QDateTime::currentMSecsSinceEpoch() + 1000;
     }
 }
 
@@ -758,10 +761,14 @@ void MainWindow::saveWindowState()
 
 void MainWindow::toggleMouseLeaveHide()
 {
+    // 功能暂时暂停：保留方法入口，但不再切换运行状态。
+    /*
     m_settings.behavior.mouseLeaveHideEnabled = !m_settings.behavior.mouseLeaveHideEnabled;
     m_settings.save();
     m_view->setBehavior(m_settings.behavior);
     applyMouseLeaveHideMode();
+    m_leaveHideIgnoreUntil = QDateTime::currentMSecsSinceEpoch() + 1000;
+    */
 }
 
 bool MainWindow::mouseLeaveHideActive() const
@@ -773,14 +780,21 @@ void MainWindow::applyMouseLeaveHideMode()
 {
     if (!m_mouseWatchTimer)
         return;
+    // 功能暂时暂停：统一停止鼠标监听，下面原逻辑保留注释。
+    m_mouseWatchTimer->stop();
+    /*
     if (m_settings.behavior.mouseLeaveHideEnabled)
         m_mouseWatchTimer->start();
     else
         m_mouseWatchTimer->stop();
+    */
 }
 
 void MainWindow::onMouseWatchTick()
 {
+    // 功能暂时暂停：定时器不会再启动，这里直接返回。
+    return;
+    /*
     if (!m_settings.behavior.mouseLeaveHideEnabled)
         return;
 
@@ -809,6 +823,7 @@ void MainWindow::onMouseWatchTick()
         m_hiddenByMouseLeave = true;
         hide();
     }
+    */
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event)

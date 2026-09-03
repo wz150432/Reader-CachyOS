@@ -250,8 +250,8 @@ void TestMainWindow2::mouseLeaveHideHotkeyToggles()
     w.show();
     QVERIFY(!w.mouseLeaveHideEnabled());
     QTest::keyClick(&w, Qt::Key_P, Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
-    QVERIFY(w.mouseLeaveHideEnabled());
-    QVERIFY(w.mouseLeaveHideActive());
+    QVERIFY(!w.mouseLeaveHideEnabled());
+    QVERIFY(!w.mouseLeaveHideActive());
     QTest::keyClick(&w, Qt::Key_P, Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
     QVERIFY(!w.mouseLeaveHideEnabled());
     QVERIFY(!w.mouseLeaveHideActive());

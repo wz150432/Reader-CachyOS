@@ -2,7 +2,7 @@
 
 pkgname=reader-cachyos-git
 _version=0.1.0
-pkgver=0.1.0.r0.g0000000
+pkgver=CachyOS.r9.gf447113
 pkgrel=1
 pkgdesc="Offline TXT/EPUB/MOBI reader for CachyOS/Arch"
 arch=('x86_64')

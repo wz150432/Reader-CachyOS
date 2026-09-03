@@ -1,4 +1,5 @@
 #include "core/Page.h"
+#include <QFontMetricsF>
 #include <QTextOption>
 #include <algorithm>
 #include <memory>
@@ -66,6 +67,7 @@ void Page::repaginate()
         auto layout = std::make_unique<QTextLayout>(paraText, f);
         QTextOption opt;
         opt.setWrapMode(wrap);
+        opt.setTabStopDistance(QFontMetricsF(f).horizontalAdvance(QLatin1Char(' ')) * 4.0);
         layout->setTextOption(opt);
         layout->beginLayout();
         qreal y = 0;
@@ -104,9 +106,10 @@ void Page::repaginate()
             if (any && y + lineH > usableHeight)
                 break;
             if (ref.line == 0 && any && ref.para != lastPara) {
-                if (y + m_params.paragraphGap + lineH > usableHeight)
+                if (y + lineH > usableHeight)
                     break;
-                y += m_params.paragraphGap;
+                if (y + m_params.paragraphGap + lineH <= usableHeight)
+                    y += m_params.paragraphGap;
             }
             page.paragraphIndex.append(ref.para);
             page.lineIndex.append(ref.line);

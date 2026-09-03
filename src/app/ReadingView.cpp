@@ -265,11 +265,11 @@ void ReadingView::paintEvent(QPaintEvent *)
         for (int i = 0; i < page.paragraphIndex.size(); ++i) {
             const QTextLayout &layout = m_page.paragraph(page.paragraphIndex.at(i));
             const QTextLine tl = layout.lineAt(page.lineIndex.at(i));
-            const qreal y = page.positions.at(i).y() + yShift;
+            const qreal y = m_settings.margin + page.positions.at(i).y() + yShift;
             if (y + tl.height() <= 0 || y >= height())
                 continue;
             lines.append({&layout, page.lineIndex.at(i),
-                          QPointF(page.positions.at(i).x(), y),
+                          QPointF(m_settings.margin + page.positions.at(i).x(), y),
                           page.lineCharRange.at(i)});
         }
     };

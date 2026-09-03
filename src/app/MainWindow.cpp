@@ -666,6 +666,13 @@ void MainWindow::toggleMouseLeaveHide()
     m_settings.save();
     m_view->setBehavior(m_settings.behavior);
     applyMouseLeaveHideMode();
+    const QString text = m_settings.behavior.mouseLeaveHideEnabled
+        ? QStringLiteral("鼠标离开自动隐藏：已开启")
+        : QStringLiteral("鼠标离开自动隐藏：已关闭");
+    if (m_tray && m_tray->isVisible())
+        m_tray->showMessage(QStringLiteral("Reader"), text, QSystemTrayIcon::Information, 1200);
+    else
+        QToolTip::showText(QCursor::pos(), text, this);
 }
 
 void MainWindow::applyMouseLeaveHideMode()

@@ -55,14 +55,6 @@ void ReadingView::setBook(std::shared_ptr<Book> book)
     update();
 }
 
-void ReadingView::setShowPageIndicator(bool show)
-{
-    if (m_showPageIndicator == show)
-        return;
-    m_showPageIndicator = show;
-    update();
-}
-
 void ReadingView::setSettings(const DisplaySettings &settings)
 {
     m_settings = settings;
@@ -290,11 +282,6 @@ void ReadingView::paintEvent(QPaintEvent *)
                                   line.pos.y() - tl.position().y()));
     }
     applyTagHighlight(painter, lines);
-    if (m_showPageIndicator) {
-        painter.setPen(QColor(128, 128, 128));
-        painter.drawText(rect().adjusted(0, 0, -12, -8), Qt::AlignRight | Qt::AlignBottom,
-                         QStringLiteral("%1 / %2").arg(m_page.currentPage() + 1).arg(m_page.pageCount()));
-    }
 }
 
 void ReadingView::resizeEvent(QResizeEvent *event)

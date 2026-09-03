@@ -69,12 +69,8 @@ void TestWindow::hideBorderToggle()
     w.show();
     w.toggleHideBorder();
     QVERIFY(!w.menuBar()->isVisible());
-    auto *view = qobject_cast<ReadingView *>(w.centralWidget());
-    QVERIFY(view);
-    QVERIFY(!view->pageIndicatorVisible());
     w.toggleHideBorder();
     QVERIFY(w.menuBar()->isVisible());
-    QVERIFY(view->pageIndicatorVisible());
 }
 
 void TestWindow::autopageReflectsSettings()

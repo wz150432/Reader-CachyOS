@@ -703,7 +703,6 @@ void MainWindow::toggleHideBorder()
     // 隐藏/显示窗口顶部的菜单栏（文件/目录/书签/设置/窗口/帮助）
     if (menuBar()) {
         menuBar()->setVisible(!menuBar()->isVisible());
-        m_view->setShowPageIndicator(menuBar()->isVisible());
     }
 }
 

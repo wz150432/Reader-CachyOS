@@ -61,13 +61,16 @@ void TestNiriConfig::globalHideBindAddAndRemove()
         "binds {\n"
         "    Mod+Q { close-window; }\n"
         "}\n");
-    QVERIFY(patchReaderGlobalHide(&content, true, QStringLiteral("/tmp/reader")));
-    QVERIFY(content.contains(QStringLiteral("Ctrl+Shift+H")));
+    QVERIFY(patchReaderGlobalHide(&content, QStringLiteral("Ctrl+Alt+H"),
+                                  QStringLiteral("/tmp/reader")));
+    QVERIFY(content.contains(QStringLiteral("Ctrl+Alt+H")));
     QVERIFY(content.contains(QStringLiteral("\"/tmp/reader\"")));
     QVERIFY(content.contains(QStringLiteral("--toggle-hide")));
-    QVERIFY(patchReaderGlobalHide(&content, false, QStringLiteral("/tmp/reader")));
-    QVERIFY(!content.contains(QStringLiteral("--toggle-hide")));
-    QVERIFY(!content.contains(QStringLiteral("reader-global-hide")));
+    QVERIFY(patchReaderGlobalHide(&content, QStringLiteral("Alt+H"),
+                                  QStringLiteral("/tmp/reader")));
+    QVERIFY(content.contains(QStringLiteral("Alt+H")));
+    QVERIFY(!content.contains(QStringLiteral("Ctrl+Alt+H")));
+    QVERIFY(content.contains(QStringLiteral("reader-global-hide")));
 }
 
 void TestNiriConfig::readerBlockWithNestedShadowStaysIntact()

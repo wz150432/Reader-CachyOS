@@ -129,7 +129,6 @@ void TestMainWindow2::remoteToggleHidesAndRestores()
     QTemporaryDir dir;
     Settings seed(Settings::defaultConfigFilePath());
     seed.load();
-    seed.behavior.globalHidePopup = false;
     seed.save();
     MainWindow w;
     w.show();
@@ -252,8 +251,10 @@ void TestMainWindow2::mouseLeaveHideHotkeyToggles()
     QVERIFY(!w.mouseLeaveHideEnabled());
     QTest::keyClick(&w, Qt::Key_P, Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
     QVERIFY(w.mouseLeaveHideEnabled());
+    QVERIFY(w.mouseLeaveHideActive());
     QTest::keyClick(&w, Qt::Key_P, Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
     QVERIFY(!w.mouseLeaveHideEnabled());
+    QVERIFY(!w.mouseLeaveHideActive());
 }
 
 void TestMainWindow2::editModeCtrlEToggles()

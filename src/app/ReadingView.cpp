@@ -199,26 +199,53 @@ bool ReadingView::scrollByPixels(qreal delta)
     if (!m_hasBook || m_page.pageCount() == 0)
         return false;
     const int startPage = m_page.currentPage();
+    const int startChapter = m_chapter;
     const qreal viewHeight = qMax<qreal>(20.0, height() - 2 * colonMargin(m_settings.font));
     qreal target = m_pixelOffset + delta;
+
     while (target < 0.0) {
         if (!m_page.prevPage()) {
+            if (m_chapter > 0) {
+                goToChapter(m_chapter - 1);
+                if (m_page.pageCount() == 0) {
+                    target = 0.0;
+                    break;
+                }
+                m_page.goToPage(m_page.pageCount() - 1);
+                const qreal pageHeight = currentPageContentHeight();
+                target += qMax(0.0, pageHeight - viewHeight);
+                continue;
+            }
             target = 0.0;
             break;
         }
         target += currentPageContentHeight();
     }
-    while (m_page.currentPage() + 1 < m_page.pageCount()) {
+
+    while (target > 0.0) {
         const qreal pageHeight = currentPageContentHeight();
-        if (pageHeight <= 0.0 || target < pageHeight)
+        if (m_page.currentPage() + 1 < m_page.pageCount()) {
+            if (pageHeight <= 0.0 || target < pageHeight)
+                break;
+            target -= pageHeight;
+            m_page.nextPage();
+            continue;
+        }
+        const qreal maxOffset = qMax(0.0, pageHeight - viewHeight);
+        if (target <= maxOffset)
             break;
-        target -= pageHeight;
-        m_page.nextPage();
+        if (m_chapter + 1 < m_book->chapters().size()) {
+            target -= maxOffset;
+            goToChapter(m_chapter + 1);
+            if (m_page.pageCount() == 0)
+                break;
+            m_page.goToPage(0);
+            continue;
+        }
+        target = maxOffset;
+        break;
     }
-    if (m_page.currentPage() + 1 >= m_page.pageCount()) {
-        const qreal pageHeight = currentPageContentHeight();
-        target = qBound(0.0, target, qMax(0.0, pageHeight - viewHeight));
-    }
+
     target = qMax(0.0, target);
     const qreal step = currentLineStep();
     if (step > 0.0)
@@ -235,6 +262,7 @@ bool ReadingView::scrollByPixels(qreal delta)
         target = qBound(0.0, target, qMax(0.0, pageHeight - viewHeight));
     }
     const bool changed = m_page.currentPage() != startPage
+        || m_chapter != startChapter
         || !qFuzzyCompare(m_pixelOffset, target);
     m_pixelOffset = target;
     return changed;
@@ -274,7 +302,7 @@ void ReadingView::paintEvent(QPaintEvent *)
             const QTextLayout &layout = m_page.paragraph(page.paragraphIndex.at(i));
             const QTextLine tl = layout.lineAt(page.lineIndex.at(i));
             const qreal y = margin + page.positions.at(i).y() + yShift;
-            if (y + tl.height() <= 0 || y >= height())
+            if (y < 0.0 || y + tl.height() > height())
                 continue;
             lines.append({&layout, page.lineIndex.at(i),
                           QPointF(margin + page.positions.at(i).x(), y),

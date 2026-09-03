@@ -24,8 +24,6 @@ private:
     QSpinBox *m_scrollStepSpin;
     QCheckBox *m_minimizeToTray;
     QCheckBox *m_doubleClickHide;
-    QCheckBox *m_globalHide;
-    QCheckBox *m_globalHidePopup;
     QCheckBox *m_mouseLeaveHide;
 };
 

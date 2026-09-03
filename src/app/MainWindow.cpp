@@ -28,7 +28,6 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
-#include <QProcess>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSpinBox>
@@ -42,6 +41,14 @@
 #include <utility>
 
 namespace reader {
+
+static QString niriKeyFromSequence(const QKeySequence &seq)
+{
+    QString key = seq.toString(QKeySequence::PortableText);
+    key.replace(QStringLiteral("Meta"), QStringLiteral("Mod"));
+    key.replace(QStringLiteral("Super"), QStringLiteral("Mod"));
+    return key;
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -99,7 +106,7 @@ MainWindow::MainWindow(QWidget *parent)
     applyWindowOpacity();
     createTrayIcon();
     m_mouseWatchTimer = new QTimer(this);
-    m_mouseWatchTimer->setInterval(150);
+    m_mouseWatchTimer->setInterval(100);
     connect(m_mouseWatchTimer, &QTimer::timeout, this, &MainWindow::onMouseWatchTick);
     m_control = new RemoteControl(this);
     connect(m_control, &RemoteControl::commandReceived,
@@ -159,7 +166,6 @@ void MainWindow::buildMenus()
             m_view->setBehavior(m_settings.behavior);
             applyMouseLeaveHideMode();
             applyWindowOpacity();
-            syncGlobalHide();
         }
     });
     QAction *advancedAction = settings->addAction(QStringLiteral("高级设置"));
@@ -170,8 +176,10 @@ void MainWindow::buildMenus()
     QAction *keysetAction = settings->addAction(QStringLiteral("按键设置"));
     connect(keysetAction, &QAction::triggered, this, [this] {
         KeysetDialog dlg(&m_settings, this);
-        if (dlg.exec() == QDialog::Accepted)
+        if (dlg.exec() == QDialog::Accepted) {
             applyKeyset();
+            syncGlobalHide();
+        }
     });
     QAction *tagsetAction = settings->addAction(QStringLiteral("标签设置"));
     connect(tagsetAction, &QAction::triggered, this, [this] {
@@ -700,16 +708,12 @@ void MainWindow::showHideWindow()
         m_hiddenGeometry = geometry();
         m_hiddenByMouseLeave = false;
         if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
-            if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-                QMessageBox::information(this, QStringLiteral("无法隐藏"),
-                    QStringLiteral("Wayland 下隐藏窗口后只能通过托盘或 niri 快捷键恢复，"
-                                   "但当前都没有可用条件，已取消隐藏。"));
+            const bool canRestore = (m_tray && m_tray->isVisible())
+                || m_globalHideBindReady
+                || m_settings.behavior.mouseLeaveHideEnabled;
+            if (!canRestore)
                 return;
-            }
             hide();
-            if (m_tray && m_tray->isVisible())
-                m_tray->showMessage(QStringLiteral("Reader 已隐藏"),
-                                    QStringLiteral("点击托盘图标可恢复显示"));
             return;
         }
         hide();
@@ -717,10 +721,14 @@ void MainWindow::showHideWindow()
         m_hiddenByMouseLeave = false;
         if (m_hiddenWasMaximized)
             showMaximized();
-        else
+        else {
+            if (!m_hiddenGeometry.isEmpty())
+                setGeometry(m_hiddenGeometry);
             show();
+        }
         raise();
         activateWindow();
+        m_view->setFocus();
     }
 }
 
@@ -754,55 +762,53 @@ void MainWindow::toggleMouseLeaveHide()
     m_settings.save();
     m_view->setBehavior(m_settings.behavior);
     applyMouseLeaveHideMode();
-    const QString text = m_settings.behavior.mouseLeaveHideEnabled
-        ? QStringLiteral("鼠标离开自动隐藏：已开启")
-        : QStringLiteral("鼠标离开自动隐藏：已关闭");
-    if (m_tray && m_tray->isVisible())
-        m_tray->showMessage(QStringLiteral("Reader"), text, QSystemTrayIcon::Information, 1200);
-    else
-        QToolTip::showText(QCursor::pos(), text, this);
+}
+
+bool MainWindow::mouseLeaveHideActive() const
+{
+    return m_mouseWatchTimer && m_mouseWatchTimer->isActive();
 }
 
 void MainWindow::applyMouseLeaveHideMode()
 {
-    if (m_settings.behavior.mouseLeaveHideEnabled) {
-        if (m_mouseWatchTimer)
-            m_mouseWatchTimer->start();
-    } else {
-        if (m_mouseWatchTimer)
-            m_mouseWatchTimer->stop();
-    }
+    if (!m_mouseWatchTimer)
+        return;
+    if (m_settings.behavior.mouseLeaveHideEnabled)
+        m_mouseWatchTimer->start();
+    else
+        m_mouseWatchTimer->stop();
 }
 
 void MainWindow::onMouseWatchTick()
 {
-    if (isVisible() || !m_settings.behavior.mouseLeaveHideEnabled || !m_hiddenByMouseLeave)
+    if (!m_settings.behavior.mouseLeaveHideEnabled)
         return;
-    if ((QApplication::keyboardModifiers() & Qt::ControlModifier)
-        && m_hiddenGeometry.contains(QCursor::pos())) {
-        m_leaveHideIgnoreUntil = QDateTime::currentMSecsSinceEpoch() + 800;
-        showHideWindow();
-    }
-}
 
-void MainWindow::leaveEvent(QEvent *event)
-{
-    if (QDateTime::currentMSecsSinceEpoch() < m_leaveHideIgnoreUntil) {
-        QMainWindow::leaveEvent(event);
+    const QPoint cursor = QCursor::pos();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+
+    if (!isVisible()) {
+        const bool ctrlPressed =
+            QGuiApplication::queryKeyboardModifiers().testFlag(Qt::ControlModifier)
+            || QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier);
+        if (ctrlPressed && !m_hiddenGeometry.isEmpty()
+            && m_hiddenGeometry.contains(cursor)) {
+            m_leaveHideIgnoreUntil = now + 800;
+            showHideWindow();
+        }
         return;
     }
-    if (m_settings.behavior.mouseLeaveHideEnabled && isVisible()) {
+
+    if (isVisible()
+        && now >= m_leaveHideIgnoreUntil
+        && !geometry().contains(cursor)
+        && !QApplication::activePopupWidget()
+        && !QApplication::activeModalWidget()) {
         m_hiddenWasMaximized = isMaximized();
         m_hiddenGeometry = geometry();
-        QTimer::singleShot(0, this, [this] {
-            if (m_settings.behavior.mouseLeaveHideEnabled && isVisible()
-                && !geometry().contains(QCursor::pos())) {
-                m_hiddenByMouseLeave = true;
-                hide();
-            }
-        });
+        m_hiddenByMouseLeave = true;
+        hide();
     }
-    QMainWindow::leaveEvent(event);
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event)
@@ -819,30 +825,19 @@ void MainWindow::handleRemoteCommand(const QString &command)
     if (hide) {
         if (!isVisible())
             return;
-        if (m_settings.behavior.globalHidePopup) {
-            if (QMessageBox::question(this, QStringLiteral("隐藏 Reader"),
-                    QStringLiteral("确定隐藏 Reader 窗口吗？")) != QMessageBox::Yes)
-                return;
-        }
         showHideWindow();
         return;
     }
     if (command == QStringLiteral("show")
         || (command == QStringLiteral("toggle-hide") && !isVisible())) {
-        if (!isVisible()) {
-            show();
-            activateWindow();
-            raise();
-        }
-        if (m_settings.behavior.globalHidePopup) {
-            QMessageBox::information(this, QStringLiteral("Reader"),
-                QStringLiteral("Reader 已恢复显示"));
-        }
+        if (!isVisible())
+            showHideWindow();
     }
 }
 
 void MainWindow::syncGlobalHide()
 {
+    m_globalHideBindReady = false;
     const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation))
                             .filePath(QStringLiteral("niri"));
     const QString path = dir + QStringLiteral("/binds.kdl");
@@ -852,20 +847,22 @@ void MainWindow::syncGlobalHide()
     const QString content = QString::fromUtf8(f.readAll());
     f.close();
     QString patched = content;
-    if (!reader::patchReaderGlobalHide(&patched, m_settings.behavior.globalHideEnabled,
+    const QString key = niriKeyFromSequence(
+        m_settings.keyset.shortcut(KeyAction::HideWindow));
+    if (!reader::patchReaderGlobalHide(&patched, key,
                                        QCoreApplication::applicationFilePath()))
         return;
-    if (patched == content)
+    if (patched == content) {
+        m_globalHideBindReady = true;
         return;
+    }
     QSaveFile sf(path);
     if (!sf.open(QIODevice::WriteOnly))
         return;
     sf.write(patched.toUtf8());
     if (!sf.commit())
         return;
-    QProcess::startDetached(QStringLiteral("niri"),
-                            {QStringLiteral("msg"), QStringLiteral("action"),
-                             QStringLiteral("load-config-file")});
+    m_globalHideBindReady = true;
 }
 
 void MainWindow::toggleFullscreen()
@@ -973,9 +970,6 @@ void MainWindow::applyWindowOpacity()
     sf.write(patched.toUtf8());
     if (!sf.commit())
         return;
-    QProcess::startDetached(QStringLiteral("niri"),
-                            {QStringLiteral("msg"), QStringLiteral("action"),
-                             QStringLiteral("load-config-file")});
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -988,6 +982,9 @@ void MainWindow::closeEvent(QCloseEvent *event)
     saveProgress();
     if (m_settings.behavior.minimizeToTray && m_tray && m_tray->isVisible()) {
         event->ignore();
+        m_hiddenWasMaximized = isMaximized();
+        m_hiddenGeometry = geometry();
+        m_hiddenByMouseLeave = false;
         hide();
         return;
     }

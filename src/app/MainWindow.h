@@ -34,6 +34,7 @@ public:
     void showHideWindow();
     void quitApplication();
     bool mouseLeaveHideEnabled() const { return m_settings.behavior.mouseLeaveHideEnabled; }
+    bool mouseLeaveHideActive() const;
     bool hasSavedWindowGeometry() const { return !m_settings.windowGeometry.isEmpty(); }
     bool editModeActive() const { return m_editor && m_editor->isVisible(); }
     void applyWindowState();
@@ -51,7 +52,6 @@ public:
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
-    void leaveEvent(QEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 
 private slots:
@@ -98,6 +98,7 @@ private:
     bool m_topHintShown = false;
     bool m_hiddenWasMaximized = false;
     bool m_hiddenByMouseLeave = false;
+    bool m_globalHideBindReady = false;
     qint64 m_leaveHideIgnoreUntil = 0;
     Cache m_cache;
     Settings m_settings;

@@ -53,9 +53,10 @@ bool patchReaderOpacity(QString *content, double opacity)
     return true;
 }
 
-bool patchReaderGlobalHide(QString *content, bool enabled, const QString &command)
+bool patchReaderGlobalHide(QString *content, const QString &keySequence,
+                           const QString &command)
 {
-    if (!content || command.isEmpty())
+    if (!content || command.isEmpty() || keySequence.trimmed().isEmpty())
         return false;
     const QString marker = QStringLiteral("// reader-global-hide");
     const QStringList lines = content->split(QLatin1Char('\n'));
@@ -85,21 +86,9 @@ bool patchReaderGlobalHide(QString *content, bool enabled, const QString &comman
         }
     }
 
-    if (!enabled) {
-        if (existingStart < 0)
-            return false;
-        QStringList updated;
-        for (int i = 0; i < lines.size(); ++i) {
-            if (i == existingStart || i == existingStart + 1)
-                continue;
-            updated.append(lines.at(i));
-        }
-        *content = updated.join(QLatin1Char('\n'));
-        return true;
-    }
-
-    const QString newLine = QStringLiteral("    Ctrl+Shift+H { spawn \"%1\" \"--toggle-hide\"; }")
-                                .arg(command);
+    const QString newLine =
+        QStringLiteral("    %1 { spawn \"%2\" \"--toggle-hide\"; }")
+            .arg(keySequence.trimmed(), command);
     if (existingStart >= 0) {
         if (existingStart + 1 >= lines.size())
             return false;

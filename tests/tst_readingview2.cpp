@@ -30,6 +30,7 @@ private slots:
     void findNextWholeBookCrossesChapters();
     void wrappedParagraphRenderingKeepsLineGaps();
     void currentBookProgressReflectsReadingPosition();
+    void scrollCrossesChapterBoundary();
 };
 
 static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
@@ -274,6 +275,30 @@ void TestReadingView2::wrappedParagraphRenderingKeepsLineGaps()
     }
     QVERIFY2(maxBand <= normalBand,
              qPrintable(QStringLiteral("overlapping text band: %1 px").arg(maxBand)));
+}
+
+void TestReadingView2::scrollCrossesChapterBoundary()
+{
+    QTemporaryDir dir;
+    auto book = makeBook(dir);
+    QVERIFY(book);
+    ReadingView view;
+    DisplaySettings s;
+    s.font = QFont(QStringLiteral("Noto Sans CJK SC"), 12);
+    view.setSettings(s);
+    view.setBook(book);
+    view.show();
+    view.resize(300, 100);
+
+    const int start = view.currentChapter();
+    for (int i = 0; i < 500 && view.currentChapter() == start; ++i)
+        view.scrollByPixels(200.0);
+    QVERIFY(view.currentChapter() > start);
+
+    const int advanced = view.currentChapter();
+    for (int i = 0; i < 500 && view.currentChapter() == advanced; ++i)
+        view.scrollByPixels(-200.0);
+    QVERIFY(view.currentChapter() < advanced);
 }
 
 void TestReadingView2::currentBookProgressReflectsReadingPosition()

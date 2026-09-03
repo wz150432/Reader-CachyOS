@@ -1,4 +1,5 @@
 #include "app/KeysetDialog.h"
+#include <QAbstractItemView>
 #include <QDialogButtonBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
@@ -45,18 +46,23 @@ KeysetDialog::KeysetDialog(Settings *settings, QWidget *parent)
     m_table = new QTableWidget(0, 2, this);
     m_table->setHorizontalHeaderLabels({QStringLiteral("功能"), QStringLiteral("快捷键")});
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     reload();
 
-    auto *edit = new QPushButton(QStringLiteral("修改选中项"), this);
     auto *reset = new QPushButton(QStringLiteral("恢复默认"), this);
     auto *ok = new QPushButton(QStringLiteral("确定"), this);
     auto *cancel = new QPushButton(QStringLiteral("取消"), this);
-    connect(edit, &QPushButton::clicked, this, &KeysetDialog::editShortcut);
     connect(reset, &QPushButton::clicked, this, &KeysetDialog::restoreDefaults);
     connect(ok, &QPushButton::clicked, this, &KeysetDialog::accept);
     connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
+    connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int row, int column) {
+        if (column != 1)
+            return;
+        m_table->setCurrentCell(row, 1);
+        editShortcut();
+    });
     auto *buttons = new QHBoxLayout;
-    buttons->addWidget(edit);
     buttons->addWidget(reset);
     buttons->addStretch();
     buttons->addWidget(ok);

@@ -30,11 +30,8 @@ BasicSettingsDialog::BasicSettingsDialog(Settings *settings, QWidget *parent)
     m_minimizeToTray->setChecked(m_settings->behavior.minimizeToTray);
     m_doubleClickHide = new QCheckBox(QStringLiteral("左右键同时按下隐藏窗口"), this);
     m_doubleClickHide->setChecked(m_settings->behavior.doubleClickHide);
-    m_globalHide = new QCheckBox(QStringLiteral("使用 niri 全局快捷键隐藏窗口（Ctrl+Shift+H）"), this);
-    m_globalHide->setChecked(m_settings->behavior.globalHideEnabled);
-    m_globalHidePopup = new QCheckBox(QStringLiteral("全局隐藏/恢复时显示提示弹窗"), this);
-    m_globalHidePopup->setChecked(m_settings->behavior.globalHidePopup);
-    m_mouseLeaveHide = new QCheckBox(QStringLiteral("鼠标离开窗口自动隐藏（Ctrl+Shift+Alt+P）"), this);
+    m_mouseLeaveHide = new QCheckBox(
+        QStringLiteral("鼠标离开自动隐藏 / Ctrl+悬停恢复（Ctrl+Shift+Alt+P）"), this);
     m_mouseLeaveHide->setChecked(m_settings->behavior.mouseLeaveHideEnabled);
 
     auto *form = new QFormLayout;
@@ -43,8 +40,6 @@ BasicSettingsDialog::BasicSettingsDialog(Settings *settings, QWidget *parent)
     form->addRow(QStringLiteral("滚动速度（像素/步）"), m_scrollStepSpin);
     form->addRow(QString(), m_minimizeToTray);
     form->addRow(QString(), m_doubleClickHide);
-    form->addRow(QString(), m_globalHide);
-    form->addRow(QString(), m_globalHidePopup);
     form->addRow(QString(), m_mouseLeaveHide);
 
     auto *ok = new QPushButton(QStringLiteral("确定"), this);
@@ -67,8 +62,6 @@ void BasicSettingsDialog::accept()
     m_settings->behavior.scrollStep = m_scrollStepSpin->value();
     m_settings->behavior.minimizeToTray = m_minimizeToTray->isChecked();
     m_settings->behavior.doubleClickHide = m_doubleClickHide->isChecked();
-    m_settings->behavior.globalHideEnabled = m_globalHide->isChecked();
-    m_settings->behavior.globalHidePopup = m_globalHidePopup->isChecked();
     m_settings->behavior.mouseLeaveHideEnabled = m_mouseLeaveHide->isChecked();
     m_settings->save();
     QDialog::accept();

@@ -58,7 +58,7 @@ cmake --build build -j$(nproc)
 ./packaging/install.sh --system    # 安装到 /usr/local（需要 sudo）
 ```
 
-### AUR（Arch / CachyOS）
+### AUR（Arch / CachyOS）暂时未上线
 
 ```bash
 paru -S reader-cachyos-git

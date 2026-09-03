@@ -122,7 +122,7 @@ void MainWindow::buildMenus()
     QAction *quit = file->addAction(QStringLiteral("退出(&X)"));
     quit->setObjectName(QStringLiteral("actQuit"));
     quit->setShortcut(QKeySequence::Quit);
-    connect(quit, &QAction::triggered, this, &QWidget::close);
+    connect(quit, &QAction::triggered, this, &MainWindow::quitApplication);
 
     QMenu *tocMenu = menuBar()->addMenu(QStringLiteral("目录"));
     QAction *tocToggle = tocMenu->addAction(QStringLiteral("显示/隐藏目录"));
@@ -517,7 +517,7 @@ void MainWindow::handleKeyAction(KeyAction a)
         showOpenMenu();
         break;
     case KeyAction::Quit:
-        close();
+        quitApplication();
         break;
     case KeyAction::EditMode:
         break;
@@ -619,6 +619,14 @@ void MainWindow::showHideWindow()
     } else {
         show();
     }
+}
+
+void MainWindow::quitApplication()
+{
+    saveProgress();
+    if (m_tray)
+        m_tray->hide();
+    QCoreApplication::quit();
 }
 
 void MainWindow::handleRemoteCommand(const QString &command)
@@ -724,7 +732,7 @@ void MainWindow::createTrayIcon()
     m_tray->setToolTip(QStringLiteral("Reader"));
     auto *menu = new QMenu(this);
     menu->addAction(QStringLiteral("显示/隐藏"), this, &MainWindow::showHideWindow);
-    menu->addAction(QStringLiteral("退出"), this, &QWidget::close);
+    menu->addAction(QStringLiteral("退出"), this, &MainWindow::quitApplication);
     m_tray->setContextMenu(menu);
     connect(m_tray, &QSystemTrayIcon::activated, this,
             [this](QSystemTrayIcon::ActivationReason r) {

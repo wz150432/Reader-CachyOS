@@ -29,6 +29,7 @@ public:
     void resetSettings();
     int currentChapter() const;
     void showHideWindow();
+    void quitApplication();
     void toggleFullscreen();
     void toggleAlwaysOnTop();
     void toggleHideBorder();

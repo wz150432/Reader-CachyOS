@@ -89,6 +89,7 @@ private:
     QRect m_hiddenGeometry;
     bool m_topHintShown = false;
     bool m_hiddenWasMaximized = false;
+    bool m_hiddenByMouseLeave = false;
     Cache m_cache;
     Settings m_settings;
     std::shared_ptr<Book> m_book;

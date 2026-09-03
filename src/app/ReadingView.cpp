@@ -2,6 +2,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileInfo>
+#include <QFontMetricsF>
 #include <QKeyEvent>
 #include <QImageReader>
 #include <QMimeData>
@@ -12,6 +13,12 @@
 #include <QWheelEvent>
 
 namespace {
+
+qreal colonMargin(const QFont &font)
+{
+    return qMax(4.0, QFontMetricsF(font).horizontalAdvance(QLatin1Char(':')));
+}
+
 reader::PageLayoutParams toPageParams(const reader::DisplaySettings &s)
 {
     reader::PageLayoutParams p;
@@ -25,7 +32,7 @@ reader::PageLayoutParams toPageParams(const reader::DisplaySettings &s)
     p.compressBlankLines = s.compressBlankLines;
     p.wordWrap = s.wordWrap;
     p.bgColor = s.bgColor;
-    p.margin = s.margin;
+    p.margin = qMax(4, qRound(colonMargin(s.font)));
     return p;
 }
 }
@@ -192,7 +199,7 @@ bool ReadingView::scrollByPixels(qreal delta)
     if (!m_hasBook || m_page.pageCount() == 0)
         return false;
     const int startPage = m_page.currentPage();
-    const qreal viewHeight = qMax<qreal>(20.0, height() - 2 * m_settings.margin);
+    const qreal viewHeight = qMax<qreal>(20.0, height() - 2 * colonMargin(m_settings.font));
     qreal target = m_pixelOffset + delta;
     while (target < 0.0) {
         if (!m_page.prevPage()) {
@@ -262,14 +269,15 @@ void ReadingView::paintEvent(QPaintEvent *)
     const qreal currentHeight = currentPageContentHeight();
     QVector<DisplayLine> lines;
     const auto addLines = [this, &lines](const PageContent &page, qreal yShift) {
+        const qreal margin = colonMargin(m_settings.font);
         for (int i = 0; i < page.paragraphIndex.size(); ++i) {
             const QTextLayout &layout = m_page.paragraph(page.paragraphIndex.at(i));
             const QTextLine tl = layout.lineAt(page.lineIndex.at(i));
-            const qreal y = m_settings.margin + page.positions.at(i).y() + yShift;
+            const qreal y = margin + page.positions.at(i).y() + yShift;
             if (y + tl.height() <= 0 || y >= height())
                 continue;
             lines.append({&layout, page.lineIndex.at(i),
-                          QPointF(m_settings.margin + page.positions.at(i).x(), y),
+                          QPointF(margin + page.positions.at(i).x(), y),
                           page.lineCharRange.at(i)});
         }
     };
@@ -369,8 +377,7 @@ void ReadingView::wheelEvent(QWheelEvent *event)
         event->accept();
         return;
     }
-    const qreal step = currentLineStep()
-        * qMax(1, qRound(qAbs(delta) / 120.0));
+    const qreal step = currentLineStep();
     if (scrollByPixels(delta < 0 ? step : -step)) {
         emit pageChanged(m_page.currentPage());
         update();

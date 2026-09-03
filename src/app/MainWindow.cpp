@@ -612,6 +612,7 @@ void MainWindow::showHideWindow()
     if (isVisible()) {
         m_hiddenWasMaximized = isMaximized();
         m_hiddenGeometry = geometry();
+        m_hiddenByMouseLeave = false;
         if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
             if (!QSystemTrayIcon::isSystemTrayAvailable()) {
                 QMessageBox::information(this, QStringLiteral("无法隐藏"),
@@ -627,6 +628,7 @@ void MainWindow::showHideWindow()
         }
         hide();
     } else {
+        m_hiddenByMouseLeave = false;
         if (m_hiddenWasMaximized)
             showMaximized();
         else
@@ -688,7 +690,7 @@ void MainWindow::applyMouseLeaveHideMode()
 
 void MainWindow::onMouseWatchTick()
 {
-    if (isVisible() || !m_settings.behavior.mouseLeaveHideEnabled)
+    if (isVisible() || !m_settings.behavior.mouseLeaveHideEnabled || !m_hiddenByMouseLeave)
         return;
     if ((QApplication::keyboardModifiers() & Qt::ControlModifier)
         && m_hiddenGeometry.contains(QCursor::pos())) {
@@ -704,6 +706,7 @@ void MainWindow::leaveEvent(QEvent *event)
         QTimer::singleShot(0, this, [this] {
             if (m_settings.behavior.mouseLeaveHideEnabled && isVisible()
                 && !geometry().contains(QCursor::pos())) {
+                m_hiddenByMouseLeave = true;
                 hide();
             }
         });

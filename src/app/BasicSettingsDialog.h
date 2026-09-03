@@ -26,6 +26,7 @@ private:
     QCheckBox *m_doubleClickHide;
     QCheckBox *m_globalHide;
     QCheckBox *m_globalHidePopup;
+    QCheckBox *m_mouseLeaveHide;
 };
 
 }

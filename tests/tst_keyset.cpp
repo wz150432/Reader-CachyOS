@@ -25,6 +25,7 @@ void TestKeyset::defaults()
     QCOMPARE(k.shortcut(KeyAction::HideBorder), QKeySequence(Qt::Key_F12));
     QCOMPARE(k.shortcut(KeyAction::AlwaysOnTop), QKeySequence(QStringLiteral("Alt+T")));
     QCOMPARE(k.shortcut(KeyAction::HideWindow), QKeySequence(QStringLiteral("Alt+H")));
+    QCOMPARE(k.shortcut(KeyAction::MouseLeaveHide), QKeySequence(QStringLiteral("Ctrl+Shift+Alt+P")));
 }
 
 void TestKeyset::saveLoadRoundtrip()

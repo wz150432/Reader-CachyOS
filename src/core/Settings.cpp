@@ -37,6 +37,9 @@ void Settings::load()
                        .toObject()
                        .value(QStringLiteral("chapter_regex"))
                        .toString();
+    const QJsonObject window = doc.object().value(QStringLiteral("window")).toObject();
+    windowGeometry = QByteArray::fromBase64(window.value(QStringLiteral("geometry")).toString().toUtf8());
+    windowState = QByteArray::fromBase64(window.value(QStringLiteral("state")).toString().toUtf8());
 }
 
 void Settings::save() const
@@ -53,6 +56,10 @@ void Settings::save() const
     QJsonObject advanced;
     advanced.insert(QStringLiteral("chapter_regex"), chapterRegex);
     root.insert(QStringLiteral("advanced"), advanced);
+    QJsonObject window;
+    window.insert(QStringLiteral("geometry"), QString::fromLatin1(windowGeometry.toBase64()));
+    window.insert(QStringLiteral("state"), QString::fromLatin1(windowState.toBase64()));
+    root.insert(QStringLiteral("window"), window);
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     f.commit();
 }
@@ -79,6 +86,7 @@ BehaviorSettings Settings::readBehavior(const QJsonObject &o)
     b.doubleClickHide = boolOr(o, "double_click_hide", b.doubleClickHide);
     b.globalHideEnabled = boolOr(o, "global_hide_enabled", b.globalHideEnabled);
     b.globalHidePopup = boolOr(o, "global_hide_popup", b.globalHidePopup);
+    b.mouseLeaveHideEnabled = boolOr(o, "mouse_leave_hide", b.mouseLeaveHideEnabled);
     return b;
 }
 
@@ -92,6 +100,7 @@ QJsonObject Settings::writeBehavior() const
     o.insert(QStringLiteral("double_click_hide"), behavior.doubleClickHide);
     o.insert(QStringLiteral("global_hide_enabled"), behavior.globalHideEnabled);
     o.insert(QStringLiteral("global_hide_popup"), behavior.globalHidePopup);
+    o.insert(QStringLiteral("mouse_leave_hide"), behavior.mouseLeaveHideEnabled);
     return o;
 }
 

@@ -34,6 +34,8 @@ BasicSettingsDialog::BasicSettingsDialog(Settings *settings, QWidget *parent)
     m_globalHide->setChecked(m_settings->behavior.globalHideEnabled);
     m_globalHidePopup = new QCheckBox(QStringLiteral("全局隐藏/恢复时显示提示弹窗"), this);
     m_globalHidePopup->setChecked(m_settings->behavior.globalHidePopup);
+    m_mouseLeaveHide = new QCheckBox(QStringLiteral("鼠标离开窗口自动隐藏（Ctrl+Shift+Alt+P）"), this);
+    m_mouseLeaveHide->setChecked(m_settings->behavior.mouseLeaveHideEnabled);
 
     auto *form = new QFormLayout;
     form->addRow(QStringLiteral("自动翻页间隔"), m_intervalSpin);
@@ -43,6 +45,7 @@ BasicSettingsDialog::BasicSettingsDialog(Settings *settings, QWidget *parent)
     form->addRow(QString(), m_doubleClickHide);
     form->addRow(QString(), m_globalHide);
     form->addRow(QString(), m_globalHidePopup);
+    form->addRow(QString(), m_mouseLeaveHide);
 
     auto *ok = new QPushButton(QStringLiteral("确定"), this);
     auto *cancel = new QPushButton(QStringLiteral("取消"), this);
@@ -66,6 +69,7 @@ void BasicSettingsDialog::accept()
     m_settings->behavior.doubleClickHide = m_doubleClickHide->isChecked();
     m_settings->behavior.globalHideEnabled = m_globalHide->isChecked();
     m_settings->behavior.globalHidePopup = m_globalHidePopup->isChecked();
+    m_settings->behavior.mouseLeaveHideEnabled = m_mouseLeaveHide->isChecked();
     m_settings->save();
     QDialog::accept();
 }

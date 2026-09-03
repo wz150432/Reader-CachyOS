@@ -26,6 +26,9 @@ void TestSettings3::behaviorRoundtrip()
     s.behavior.minimizeToTray = true;
     s.behavior.globalHideEnabled = true;
     s.behavior.globalHidePopup = false;
+    s.behavior.mouseLeaveHideEnabled = true;
+    s.windowGeometry = QByteArrayLiteral("geometry-bytes");
+    s.windowState = QByteArrayLiteral("state-bytes");
     s.save();
     Settings t(path);
     t.load();
@@ -35,6 +38,9 @@ void TestSettings3::behaviorRoundtrip()
     QVERIFY(t.behavior.minimizeToTray);
     QVERIFY(t.behavior.globalHideEnabled);
     QVERIFY(!t.behavior.globalHidePopup);
+    QVERIFY(t.behavior.mouseLeaveHideEnabled);
+    QCOMPARE(t.windowGeometry, QByteArrayLiteral("geometry-bytes"));
+    QCOMPARE(t.windowState, QByteArrayLiteral("state-bytes"));
 }
 
 void TestSettings3::tagsRoundtrip()
@@ -65,6 +71,9 @@ void TestSettings3::defaultsFilled()
     QVERIFY(!s.behavior.minimizeToTray);
     QVERIFY(!s.behavior.globalHideEnabled);
     QVERIFY(s.behavior.globalHidePopup);
+    QVERIFY(!s.behavior.mouseLeaveHideEnabled);
+    QVERIFY(s.windowGeometry.isEmpty());
+    QVERIFY(s.windowState.isEmpty());
     QVERIFY(s.tags.isEmpty());
     QVERIFY(s.chapterRegex.isEmpty());
 }

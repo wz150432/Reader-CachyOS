@@ -9,7 +9,7 @@ enum class KeyAction {
     PageUp, PageDown, LineUp, LineDown, ChapterUp, ChapterDown,
     Search, Jump, AddBookmark, EditMode, AutoPage,
     FontZoomIn, FontZoomOut, Fullscreen, HideBorder, AlwaysOnTop,
-    HideWindow, OpenFile, Quit
+    HideWindow, OpenFile, Quit, MouseLeaveHide
 };
 
 class Keyset

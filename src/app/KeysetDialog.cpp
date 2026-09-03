@@ -32,6 +32,7 @@ static QString actionName(KeyAction a)
     case KeyAction::HideWindow: return QStringLiteral("隐藏窗口");
     case KeyAction::OpenFile: return QStringLiteral("打开文件");
     case KeyAction::Quit: return QStringLiteral("退出");
+    case KeyAction::MouseLeaveHide: return QStringLiteral("鼠标离开隐藏");
     }
     return QString();
 }

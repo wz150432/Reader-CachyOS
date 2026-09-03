@@ -1,6 +1,7 @@
 #pragma once
 #include <QMainWindow>
 #include <QList>
+#include <QRect>
 #include <memory>
 #include "core/Book.h"
 #include "core/Cache.h"
@@ -9,6 +10,7 @@
 class QTreeWidget;
 class QLineEdit;
 class QMenu;
+class QTimer;
 class QSystemTrayIcon;
 
 namespace reader {
@@ -30,6 +32,9 @@ public:
     int currentChapter() const;
     void showHideWindow();
     void quitApplication();
+    bool mouseLeaveHideEnabled() const { return m_settings.behavior.mouseLeaveHideEnabled; }
+    bool hasSavedWindowGeometry() const { return !m_settings.windowGeometry.isEmpty(); }
+    void applyWindowState();
     void toggleFullscreen();
     void toggleAlwaysOnTop();
     void toggleHideBorder();
@@ -44,6 +49,7 @@ public:
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
+    void leaveEvent(QEvent *event) override;
 
 private slots:
     void onChapterChanged(int index);
@@ -69,13 +75,20 @@ private:
     void applyWindowOpacity();
     void syncGlobalHide();
     void handleKeyAction(KeyAction action);
+    void saveWindowState();
+    void toggleMouseLeaveHide();
+    void applyMouseLeaveHideMode();
+    void onMouseWatchTick();
     ReadingView *m_view = nullptr;
     QTreeWidget *m_toc = nullptr;
     QLineEdit *m_searchEdit = nullptr;
     QMenu *m_deleteRecentMenu = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
     RemoteControl *m_control = nullptr;
+    QTimer *m_mouseWatchTimer = nullptr;
+    QRect m_hiddenGeometry;
     bool m_topHintShown = false;
+    bool m_hiddenWasMaximized = false;
     Cache m_cache;
     Settings m_settings;
     std::shared_ptr<Book> m_book;

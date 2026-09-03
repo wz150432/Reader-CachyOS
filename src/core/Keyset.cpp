@@ -24,6 +24,7 @@ static QMap<KeyAction, QKeySequence> makeDefaults()
     d.insert(KeyAction::HideWindow, QKeySequence(QStringLiteral("Alt+H")));
     d.insert(KeyAction::OpenFile, QKeySequence(QStringLiteral("Ctrl+O")));
     d.insert(KeyAction::Quit, QKeySequence(QStringLiteral("Ctrl+Q")));
+    d.insert(KeyAction::MouseLeaveHide, QKeySequence(QStringLiteral("Ctrl+Shift+Alt+P")));
     return d;
 }
 

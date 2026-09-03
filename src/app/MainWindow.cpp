@@ -97,10 +97,14 @@ MainWindow::MainWindow(QWidget *parent)
     resize(960, 720);
     applyWindowOpacity();
     createTrayIcon();
+    m_mouseWatchTimer = new QTimer(this);
+    m_mouseWatchTimer->setInterval(150);
+    connect(m_mouseWatchTimer, &QTimer::timeout, this, &MainWindow::onMouseWatchTick);
     m_control = new RemoteControl(this);
     connect(m_control, &RemoteControl::commandReceived,
             this, &MainWindow::handleRemoteCommand);
     syncGlobalHide();
+    applyMouseLeaveHideMode();
 }
 
 void MainWindow::buildMenus()
@@ -152,6 +156,7 @@ void MainWindow::buildMenus()
         BasicSettingsDialog dlg(&m_settings, this);
         if (dlg.exec() == QDialog::Accepted) {
             m_view->setBehavior(m_settings.behavior);
+            applyMouseLeaveHideMode();
             applyWindowOpacity();
             syncGlobalHide();
         }
@@ -519,6 +524,9 @@ void MainWindow::handleKeyAction(KeyAction a)
     case KeyAction::Quit:
         quitApplication();
         break;
+    case KeyAction::MouseLeaveHide:
+        toggleMouseLeaveHide();
+        break;
     case KeyAction::EditMode:
         break;
     }
@@ -602,6 +610,8 @@ int MainWindow::currentProgressPercent() const
 void MainWindow::showHideWindow()
 {
     if (isVisible()) {
+        m_hiddenWasMaximized = isMaximized();
+        m_hiddenGeometry = geometry();
         if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"))) {
             if (!QSystemTrayIcon::isSystemTrayAvailable()) {
                 QMessageBox::information(this, QStringLiteral("无法隐藏"),
@@ -617,16 +627,81 @@ void MainWindow::showHideWindow()
         }
         hide();
     } else {
-        show();
+        if (m_hiddenWasMaximized)
+            showMaximized();
+        else
+            show();
+        raise();
+        activateWindow();
     }
 }
 
 void MainWindow::quitApplication()
 {
+    saveWindowState();
     saveProgress();
     if (m_tray)
         m_tray->hide();
     QCoreApplication::quit();
+}
+
+void MainWindow::applyWindowState()
+{
+    if (!m_settings.windowGeometry.isEmpty())
+        restoreGeometry(m_settings.windowGeometry);
+    if (!m_settings.windowState.isEmpty())
+        restoreState(m_settings.windowState);
+}
+
+void MainWindow::saveWindowState()
+{
+    m_settings.windowGeometry = saveGeometry();
+    m_settings.windowState = saveState();
+    m_settings.save();
+}
+
+void MainWindow::toggleMouseLeaveHide()
+{
+    m_settings.behavior.mouseLeaveHideEnabled = !m_settings.behavior.mouseLeaveHideEnabled;
+    m_settings.save();
+    m_view->setBehavior(m_settings.behavior);
+    applyMouseLeaveHideMode();
+}
+
+void MainWindow::applyMouseLeaveHideMode()
+{
+    if (m_settings.behavior.mouseLeaveHideEnabled) {
+        if (m_mouseWatchTimer)
+            m_mouseWatchTimer->start();
+    } else {
+        if (m_mouseWatchTimer)
+            m_mouseWatchTimer->stop();
+    }
+}
+
+void MainWindow::onMouseWatchTick()
+{
+    if (isVisible() || !m_settings.behavior.mouseLeaveHideEnabled)
+        return;
+    if ((QApplication::keyboardModifiers() & Qt::ControlModifier)
+        && m_hiddenGeometry.contains(QCursor::pos())) {
+        showHideWindow();
+    }
+}
+
+void MainWindow::leaveEvent(QEvent *event)
+{
+    if (m_settings.behavior.mouseLeaveHideEnabled && isVisible()) {
+        m_hiddenWasMaximized = isMaximized();
+        m_hiddenGeometry = geometry();
+        QTimer::singleShot(0, this, [this] {
+            if (m_settings.behavior.mouseLeaveHideEnabled && isVisible()
+                && !geometry().contains(QCursor::pos())) {
+                hide();
+            }
+        });
+    }
+    QMainWindow::leaveEvent(event);
 }
 
 void MainWindow::handleRemoteCommand(const QString &command)
@@ -797,6 +872,7 @@ void MainWindow::applyWindowOpacity()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    saveWindowState();
     saveProgress();
     if (m_settings.behavior.minimizeToTray && m_tray && m_tray->isVisible()) {
         event->ignore();

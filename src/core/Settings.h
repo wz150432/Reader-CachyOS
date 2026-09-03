@@ -2,6 +2,7 @@
 #include <QColor>
 #include <QFont>
 #include <QJsonArray>
+#include <QByteArray>
 #include <QJsonObject>
 #include <QString>
 #include <QVector>
@@ -36,6 +37,7 @@ struct BehaviorSettings
     bool doubleClickHide = true;
     bool globalHideEnabled = false;
     bool globalHidePopup = true;
+    bool mouseLeaveHideEnabled = false;
 };
 
 struct TagItem
@@ -55,6 +57,8 @@ public:
     BehaviorSettings behavior;
     QVector<TagItem> tags;
     QString chapterRegex;
+    QByteArray windowGeometry;
+    QByteArray windowState;
     void load();
     void save() const;
     static QString defaultConfigFilePath();

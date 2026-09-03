@@ -27,6 +27,7 @@ private slots:
     void escapeClosesSearchBarAndClearsHighlight();
     void progressPercentReflectsCurrentBookPosition();
     void removeRecentMenuDeletesSingleBook();
+    void mouseLeaveHideHotkeyToggles();
 };
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -241,6 +242,17 @@ void TestMainWindow2::removeRecentMenuDeletesSingleBook()
     const QStringList recent = c.recentFiles();
     QVERIFY(recent.contains(second));
     QVERIFY(!recent.contains(first));
+}
+
+void TestMainWindow2::mouseLeaveHideHotkeyToggles()
+{
+    MainWindow w;
+    w.show();
+    QVERIFY(!w.mouseLeaveHideEnabled());
+    QTest::keyClick(&w, Qt::Key_P, Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
+    QVERIFY(w.mouseLeaveHideEnabled());
+    QTest::keyClick(&w, Qt::Key_P, Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier);
+    QVERIFY(!w.mouseLeaveHideEnabled());
 }
 
 int main(int argc, char *argv[])

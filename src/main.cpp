@@ -51,7 +51,9 @@ int main(int argc, char *argv[])
         w.openLastRead();
     else
         w.openBook(openFiles.first());
-    w.resize(960, 720);
+    w.applyWindowState();
+    if (!w.hasSavedWindowGeometry())
+        w.resize(960, 720);
     w.show();
     return app.exec();
 }

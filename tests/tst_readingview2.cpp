@@ -31,6 +31,7 @@ private slots:
     void wrappedParagraphRenderingKeepsLineGaps();
     void currentBookProgressReflectsReadingPosition();
     void scrollCrossesChapterBoundary();
+    void pageTurnCrossesChapterBoundary();
 };
 
 static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
@@ -298,6 +299,30 @@ void TestReadingView2::scrollCrossesChapterBoundary()
     const int advanced = view.currentChapter();
     for (int i = 0; i < 500 && view.currentChapter() == advanced; ++i)
         view.scrollByPixels(-200.0);
+    QVERIFY(view.currentChapter() < advanced);
+}
+
+void TestReadingView2::pageTurnCrossesChapterBoundary()
+{
+    QTemporaryDir dir;
+    auto book = makeBook(dir);
+    QVERIFY(book);
+    ReadingView view;
+    DisplaySettings s;
+    s.font = QFont(QStringLiteral("Noto Sans CJK SC"), 12);
+    view.setSettings(s);
+    view.setBook(book);
+    view.show();
+    view.resize(300, 100);
+
+    const int start = view.currentChapter();
+    for (int i = 0; i < 500 && view.currentChapter() == start; ++i)
+        view.pageDown();
+    QVERIFY(view.currentChapter() > start);
+
+    const int advanced = view.currentChapter();
+    for (int i = 0; i < 500 && view.currentChapter() == advanced; ++i)
+        view.pageUp();
     QVERIFY(view.currentChapter() < advanced);
 }
 

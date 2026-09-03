@@ -101,8 +101,18 @@ void ReadingView::goToPage(int page)
 
 void ReadingView::pageUp()
 {
+    if (!m_hasBook)
+        return;
     if (m_page.prevPage()) {
         resetPixelScroll();
+        emit pageChanged(m_page.currentPage());
+        update();
+        return;
+    }
+    if (m_chapter > 0) {
+        goToChapter(m_chapter - 1);
+        if (m_page.pageCount() > 0)
+            m_page.goToPage(m_page.pageCount() - 1);
         emit pageChanged(m_page.currentPage());
         update();
     }
@@ -110,8 +120,16 @@ void ReadingView::pageUp()
 
 void ReadingView::pageDown()
 {
+    if (!m_hasBook)
+        return;
     if (m_page.nextPage()) {
         resetPixelScroll();
+        emit pageChanged(m_page.currentPage());
+        update();
+        return;
+    }
+    if (m_chapter + 1 < m_book->chapters().size()) {
+        goToChapter(m_chapter + 1);
         emit pageChanged(m_page.currentPage());
         update();
     }
@@ -344,14 +362,15 @@ void ReadingView::mousePressEvent(QMouseEvent *event)
         emit hideWindowRequested();
         return;
     }
-    if (event->button() == Qt::LeftButton && m_page.nextPage()) {
-        resetPixelScroll();
-        emit pageChanged(m_page.currentPage());
-        update();
-    } else if (event->button() == Qt::RightButton && m_page.prevPage()) {
-        resetPixelScroll();
-        emit pageChanged(m_page.currentPage());
-        update();
+    if (event->button() == Qt::LeftButton) {
+        pageDown();
+        event->accept();
+        return;
+    }
+    if (event->button() == Qt::RightButton) {
+        pageUp();
+        event->accept();
+        return;
     }
     QWidget::mousePressEvent(event);
 }
@@ -421,10 +440,14 @@ void ReadingView::keyPressEvent(QKeyEvent *event)
     };
     bool moved = false;
     if (is(KeyAction::PageDown)) {
-        moved = m_page.nextPage();
-    } else if (is(KeyAction::PageUp)) {
-        moved = m_page.prevPage();
-    } else if (is(KeyAction::LineDown)) {
+        pageDown();
+        return;
+    }
+    if (is(KeyAction::PageUp)) {
+        pageUp();
+        return;
+    }
+    if (is(KeyAction::LineDown)) {
         moved = m_page.nextLine();
     } else if (is(KeyAction::LineUp)) {
         moved = m_page.prevLine();

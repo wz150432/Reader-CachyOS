@@ -1,6 +1,4 @@
-# Maintainer: YOUR NAME <your@email.example>
-# Contributor: YOUR NAME <your@email.example>
-# Replace YOUR_USERNAME with the account that hosts Reader-CachyOS on Git.
+# Maintainer: wz150432 <williamwz150432@outlook.com>
 
 pkgname=reader-cachyos-git
 _version=0.1.0
@@ -8,7 +6,7 @@ pkgver=0.1.0.r0.g0000000
 pkgrel=1
 pkgdesc="Offline TXT/EPUB/MOBI reader for CachyOS/Arch"
 arch=('x86_64')
-url='https://github.com/YOUR_USERNAME/Reader-CachyOS'
+url='https://github.com/wz150432/Reader-CachyOS'
 license=('custom')
 depends=('qt6-base')
 makedepends=('cmake' 'git')

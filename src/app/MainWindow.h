@@ -90,6 +90,7 @@ private:
     bool m_topHintShown = false;
     bool m_hiddenWasMaximized = false;
     bool m_hiddenByMouseLeave = false;
+    qint64 m_leaveHideIgnoreUntil = 0;
     Cache m_cache;
     Settings m_settings;
     std::shared_ptr<Book> m_book;

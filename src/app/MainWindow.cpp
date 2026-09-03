@@ -694,12 +694,17 @@ void MainWindow::onMouseWatchTick()
         return;
     if ((QApplication::keyboardModifiers() & Qt::ControlModifier)
         && m_hiddenGeometry.contains(QCursor::pos())) {
+        m_leaveHideIgnoreUntil = QDateTime::currentMSecsSinceEpoch() + 800;
         showHideWindow();
     }
 }
 
 void MainWindow::leaveEvent(QEvent *event)
 {
+    if (QDateTime::currentMSecsSinceEpoch() < m_leaveHideIgnoreUntil) {
+        QMainWindow::leaveEvent(event);
+        return;
+    }
     if (m_settings.behavior.mouseLeaveHideEnabled && isVisible()) {
         m_hiddenWasMaximized = isMaximized();
         m_hiddenGeometry = geometry();

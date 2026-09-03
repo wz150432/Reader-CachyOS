@@ -1,6 +1,4 @@
 post_install() {
-    update-desktop-database -q 2>/dev/null || true
-    update-mime-database -q /usr/share/mime 2>/dev/null || true
     xdg-mime default reader.desktop \
         text/plain application/epub+zip application/x-mobipocket-ebook 2>/dev/null || true
 }
@@ -12,6 +10,4 @@ post_upgrade() {
 pre_remove() {
     xdg-mime unset text/plain application/epub+zip application/x-mobipocket-ebook \
         2>/dev/null || true
-    update-desktop-database -q 2>/dev/null || true
-    update-mime-database -q /usr/share/mime 2>/dev/null || true
 }

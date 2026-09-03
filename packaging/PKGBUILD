@@ -22,7 +22,8 @@ pkgver() {
 }
 
 build() {
-    cmake -B build -S "${srcdir}/${pkgname}" \
+    cd "${srcdir}/${pkgname}"
+    cmake -B build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr
     cmake --build build -j"$(nproc)"

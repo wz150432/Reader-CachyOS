@@ -1,0 +1,13 @@
+post_install() {
+    xdg-mime default reader.desktop \
+        text/plain application/epub+zip application/x-mobipocket-ebook 2>/dev/null || true
+}
+
+post_upgrade() {
+    post_install
+}
+
+pre_remove() {
+    xdg-mime unset text/plain application/epub+zip application/x-mobipocket-ebook \
+        2>/dev/null || true
+}

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-reader-txt">
+    <comment>Reader plain text</comment>
+    <comment xml:lang="zh_CN">Reader 文本文件</comment>
+    <glob pattern="*.txt"/>
+  </mime-type>
+  <mime-type type="application/epub+zip">
+    <comment>EPUB ebook</comment>
+    <comment xml:lang="zh_CN">EPUB 电子书</comment>
+    <glob pattern="*.epub"/>
+  </mime-type>
+  <mime-type type="application/x-mobipocket-ebook">
+    <comment>MOBI ebook</comment>
+    <comment xml:lang="zh_CN">MOBI 电子书</comment>
+    <glob pattern="*.mobi"/>
+    <glob pattern="*.azw"/>
+    <glob pattern="*.azw3"/>
+  </mime-type>
+</mime-info>

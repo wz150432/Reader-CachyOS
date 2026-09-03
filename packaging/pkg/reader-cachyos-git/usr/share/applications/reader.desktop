@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Reader
+Name[zh_CN]=Reader
+GenericName=Book Reader
+GenericName[zh_CN]=阅读器
+Comment=Offline TXT/EPUB/MOBI reader
+Comment[zh_CN]=本地 TXT/EPUB/MOBI 阅读器
+Exec=reader %F
+Icon=reader
+Terminal=false
+Categories=Utility;TextTools;Viewer;
+Keywords=reader;book;txt;epub;mobi;
+Keywords[zh_CN]=阅读;Reader;书籍;txt;epub;mobi;
+MimeType=text/plain;application/epub+zip;application/x-mobipocket-ebook;application/x-reader-txt;
+StartupNotify=true

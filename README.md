@@ -1,4 +1,4 @@
-# Reader CachyOS
+# Reader CachyOS (Niri, with Xwayland)
 
 > 致敬 [binbyu/Reader](https://github.com/binbyu/Reader) -- 一款简洁好用的 Windows 桌面阅读器。
 > 本项目将其核心阅读体验移植到 Linux 原生环境，献给每一位在 CachyOS / Arch 上安静读书的人。

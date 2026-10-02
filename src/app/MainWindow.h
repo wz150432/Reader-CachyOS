@@ -13,6 +13,7 @@ class QLineEdit;
 class QMenu;
 class QTimer;
 class QSystemTrayIcon;
+class QWidgetAction;
 
 namespace reader {
 
@@ -89,7 +90,8 @@ private:
     ReadingView *m_view = nullptr;
     QTreeWidget *m_toc = nullptr;
     QLineEdit *m_searchEdit = nullptr;
-    QMenu *m_deleteRecentMenu = nullptr;
+    bool m_currentRecordRemoved = false;
+    QWidgetAction *m_deleteConfirmation = nullptr;
     QPlainTextEdit *m_editor = nullptr;
     QSystemTrayIcon *m_tray = nullptr;
     RemoteControl *m_control = nullptr;

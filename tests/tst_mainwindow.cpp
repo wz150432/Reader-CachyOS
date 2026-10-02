@@ -4,6 +4,10 @@
 #include <QFile>
 #include "app/MainWindow.h"
 #include "core/Cache.h"
+#include "app/ReadingView.h"
+#include "EpubFixture.h"
+#include <QTimer>
+#include <QMessageBox>
 
 using namespace reader;
 
@@ -13,6 +17,7 @@ class TestMainWindow : public QObject
 private slots:
     void openBookPopulatesTocAndTitle();
     void pageChangeSavesProgress();
+    void epubReadingAndSafeEditMode();
 };
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -55,6 +60,54 @@ void TestMainWindow::pageChangeSavesProgress()
     const auto p = c.progress(path);
     QVERIFY(p.has_value());
     QVERIFY(p->pageIndex >= 0);
+}
+
+void TestMainWindow::epubReadingAndSafeEditMode()
+{
+    QTemporaryDir dir;
+    const QString path = fixture(dir);
+    QFile original(path);
+    QVERIFY(original.open(QIODevice::ReadOnly));
+    const QByteArray bytes = original.readAll();
+    original.close();
+    {
+        MainWindow w;
+        w.openBook(path);
+        w.show();
+        QCOMPARE(w.tocItemCount(), 2);
+        QVERIFY(w.currentBookTitle().contains(QStringLiteral("目录乙")));
+        auto *view = w.findChild<ReadingView *>();
+        QVERIFY(view);
+        view->pageDown();
+        QCOMPARE(w.currentChapter(), 1);
+        view->goToChapter(0);
+        view->setSearchWholeBook(true);
+        QVERIFY(view->findNext(QStringLiteral("beta")));
+        QCOMPARE(view->currentMatchStart(), 11);
+        QCOMPARE(w.currentChapter(), 1);
+        QVERIFY(w.currentProgressPercent() > 0);
+        w.addBookmarkForCurrentBook();
+        QTimer::singleShot(0, [] {
+            if (auto *dialog = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+                dialog->accept();
+        });
+        QTest::keyClick(view, Qt::Key_E, Qt::ControlModifier);
+        QVERIFY(!w.editModeActive());
+        w.close();
+    }
+    Cache cache(Cache::defaultCacheFilePath());
+    cache.load();
+    auto progress = cache.progress(path);
+    QVERIFY(progress);
+    QCOMPARE(progress->chapterIndex, 1);
+    const auto marks = cache.bookmarks(path);
+    QCOMPARE(marks.size(), 1);
+    QCOMPARE(marks.first().chapterIndex, 1);
+    MainWindow restored;
+    restored.openBook(path);
+    QCOMPARE(restored.currentChapter(), 1);
+    QVERIFY(original.open(QIODevice::ReadOnly));
+    QCOMPARE(original.readAll(), bytes);
 }
 
 int main(int argc, char *argv[])

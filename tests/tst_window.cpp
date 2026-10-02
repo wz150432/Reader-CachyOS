@@ -1,9 +1,12 @@
 #include <QtTest>
 #include <QApplication>
-#include <QDockWidget>
+#include <QTreeWidget>
 #include <QMenuBar>
 #include <QWheelEvent>
 #include <QTemporaryDir>
+#include <QSlider>
+#include <QTimer>
+#include "app/SettingsDialog.h"
 #include "app/MainWindow.h"
 #include "app/ReadingView.h"
 
@@ -23,7 +26,9 @@ private slots:
     void dualButtonPressHidesWindow();
     void noMinimumSizeLimit();
     void shrinksBelowOldLimit();
-    void fullTransparencyMakesChromeTransparent();
+    void fullTransparencyRequiresHiddenMenu();
+    void displayDialogAlphaMinimumFollowsMenu();
+    void savedZeroAlphaClampedOnStartup();
     void tocHiddenByDefault();
 };
 
@@ -122,30 +127,89 @@ void TestWindow::shrinksBelowOldLimit()
     QVERIFY(w.height() < 320);
 }
 
-void TestWindow::fullTransparencyMakesChromeTransparent()
+void TestWindow::fullTransparencyRequiresHiddenMenu()
 {
     MainWindow w;
     w.show();
     auto *view = qobject_cast<ReadingView *>(w.centralWidget());
     QVERIFY(view);
-    QWheelEvent wheel(QPointF(10, 10), QPointF(10, 10), QPoint(0, 0), QPoint(0, 120),
-                      Qt::NoButton, Qt::ControlModifier | Qt::ShiftModifier,
-                      Qt::NoScrollPhase, false);
-    QApplication::sendEvent(view, &wheel);
-    QVERIFY(w.menuBar()->styleSheet().contains(QStringLiteral("transparent")));
-    auto *dock = w.findChild<QDockWidget *>(QStringLiteral("tocDock"));
-    QVERIFY(dock);
-    QVERIFY(!dock->styleSheet().contains(QStringLiteral("transparent")));
-    QVERIFY(dock->styleSheet().contains(QStringLiteral("palette(window)")));
+    const auto setTransparent = [view] {
+        QWheelEvent wheel(QPointF(10, 10), QPointF(10, 10), QPoint(), QPoint(0, 120),
+                          Qt::NoButton, Qt::ControlModifier | Qt::ShiftModifier,
+                          Qt::NoScrollPhase, false);
+        QApplication::sendEvent(view, &wheel);
+    };
+    const auto savedAlpha = [] {
+        Settings saved;
+        saved.load();
+        return saved.display.windowAlpha;
+    };
+    setTransparent();
+    QCOMPARE(savedAlpha(), 1);
+    QVERIFY(!w.menuBar()->styleSheet().contains(QStringLiteral("transparent")));
+    QTest::keyClick(&w, Qt::Key_F12);
+    QVERIFY(w.menuBar()->isHidden());
+    setTransparent();
+    QCOMPARE(savedAlpha(), 0);
+    QTest::keyClick(&w, Qt::Key_F12);
+    QVERIFY(!w.menuBar()->isHidden());
+    QCOMPARE(savedAlpha(), 1);
+    setTransparent();
+    QCOMPARE(savedAlpha(), 1);
+}
+
+void TestWindow::savedZeroAlphaClampedOnStartup()
+{
+    Settings saved;
+    saved.load();
+    saved.display.windowAlpha = 0;
+    saved.save();
+    MainWindow w;
+    w.show();
+    QVERIFY(!w.menuBar()->isHidden());
+    saved.load();
+    QCOMPARE(saved.display.windowAlpha, 1);
+    auto *view = qobject_cast<ReadingView *>(w.centralWidget());
+    QVERIFY(view);
+    QWheelEvent down(QPointF(10, 10), QPointF(10, 10), QPoint(), QPoint(0, -120),
+                     Qt::NoButton, Qt::ControlModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(view, &down);
+    saved.load();
+    QCOMPARE(saved.display.windowAlpha, 11);
+}
+
+void TestWindow::displayDialogAlphaMinimumFollowsMenu()
+{
+    MainWindow w;
+    w.show();
+    QAction *display = nullptr;
+    for (auto *action : w.findChildren<QAction *>()) {
+        if (action->text() == QStringLiteral("显示设置"))
+            display = action;
+    }
+    QVERIFY(display);
+    for (int minimum : {1, 0}) {
+        QTimer::singleShot(0, &w, [&w, minimum] {
+            auto *dialog = w.findChild<SettingsDialog *>();
+            QVERIFY(dialog);
+            auto *slider = dialog->findChild<QSlider *>();
+            QVERIFY(slider);
+            const int actual = slider->minimum();
+            dialog->reject();
+            QCOMPARE(actual, minimum);
+        });
+        display->trigger();
+        w.toggleHideBorder();
+    }
 }
 
 void TestWindow::tocHiddenByDefault()
 {
     MainWindow w;
     w.show();
-    auto *dock = w.findChild<QDockWidget *>(QStringLiteral("tocDock"));
-    QVERIFY(dock);
-    QVERIFY(!dock->isVisible());
+    auto *toc = w.findChild<QTreeWidget *>(QStringLiteral("tocView"));
+    QVERIFY(toc);
+    QVERIFY(!toc->isVisible());
 }
 
 int main(int argc, char *argv[])

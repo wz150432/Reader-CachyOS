@@ -7,6 +7,13 @@
 #include <QMenu>
 #include <QLineEdit>
 #include <QToolBar>
+#include <QMenuBar>
+#include <QMessageBox>
+#include <QAbstractButton>
+#include <QPushButton>
+#include <QWidgetAction>
+#include <QTreeWidget>
+#include <QTimer>
 #include "app/ReadingView.h"
 #include "app/MainWindow.h"
 #include "core/Cache.h"
@@ -27,6 +34,8 @@ private slots:
     void escapeClosesSearchBarAndClearsHighlight();
     void progressPercentReflectsCurrentBookPosition();
     void removeRecentMenuDeletesSingleBook();
+    void openMenuHasNoLimit();
+    void tocFillsReadingAreaAndToggles();
     void mouseLeaveHideHotkeyToggles();
     void editModeCtrlEToggles();
 };
@@ -112,6 +121,9 @@ void TestMainWindow2::openMenuShowsRecentAndNewBook()
     QTest::qWait(30);
     QMenu *open = w.findChild<QMenu *>(QStringLiteral("openMenu"));
     QVERIFY(open);
+    QCOMPARE(w.menuBar()->actions().first()->menu(), open);
+    QVERIFY(w.findChild<QAction *>(QStringLiteral("actClearRecent")));
+    QVERIFY(!w.findChild<QAction *>(QStringLiteral("actQuit")));
     bool hasRecent = false;
     bool hasNew = false;
     for (QAction *action : open->actions()) {
@@ -224,24 +236,134 @@ void TestMainWindow2::removeRecentMenuDeletesSingleBook()
     w.openBook(second);
     QTest::qWait(30);
 
-    QMenu *deleteMenu = w.findChild<QMenu *>(QStringLiteral("deleteRecentMenu"));
-    QVERIFY(deleteMenu);
-    bool found = false;
-    for (QAction *action : deleteMenu->actions()) {
-        if (action->toolTip() == first) {
-            action->trigger();
-            found = true;
-            break;
-        }
-    }
-    QVERIFY(found);
-    QTest::qWait(30);
-
+    QMenu *open = w.findChild<QMenu *>(QStringLiteral("openMenu"));
+    QVERIFY(open);
+    QVERIFY(!w.findChild<QMenu *>(QStringLiteral("deleteRecentMenu")));
+    auto rightClick = [&](const QString &path, QMessageBox::StandardButton answer) {
+        open->popup(w.mapToGlobal(QPoint(20, 20)));
+        QTest::qWait(20);
+        QAction *book = nullptr;
+        for (QAction *action : open->actions())
+            if (action->toolTip() == path) book = action;
+        QVERIFY(book);
+        QSignalSpy opened(book, &QAction::triggered);
+        QTest::mouseMove(open, open->actionGeometry(book).center());
+        open->setActiveAction(book);
+        QTest::mousePress(open, Qt::RightButton, Qt::NoModifier, open->actionGeometry(book).center());
+        QVERIFY(open->isVisible());
+        QTest::mouseRelease(open, Qt::RightButton, Qt::NoModifier, open->actionGeometry(book).center());
+        QTest::qWait(20);
+        QVERIFY(open->isVisible());
+        QCOMPARE(opened.count(), 0);
+        QVERIFY(!QApplication::activeModalWidget());
+        auto *confirmation = open->findChild<QWidgetAction *>(QStringLiteral("deleteConfirmation"));
+        QVERIFY(confirmation);
+        const int bookIndex = open->actions().indexOf(book);
+        QCOMPARE(open->actions().at(bookIndex + 1), confirmation);
+        auto *button = confirmation->defaultWidget()->findChild<QPushButton *>(
+            answer == QMessageBox::Yes ? QStringLiteral("confirmDelete") : QStringLiteral("cancelDelete"));
+        QVERIFY(button);
+        QTest::mouseClick(button, Qt::LeftButton);
+        QTest::qWait(20);
+        QVERIFY(open->isVisible());
+    };
+    rightClick(first, QMessageBox::No);
     Cache c(Cache::defaultCacheFilePath());
     c.load();
-    const QStringList recent = c.recentFiles();
-    QVERIFY(recent.contains(second));
-    QVERIFY(!recent.contains(first));
+    QVERIFY(c.recentFiles().contains(first));
+    QAction *firstBook = nullptr;
+    for (QAction *action : open->actions())
+        if (action->toolTip() == first) firstBook = action;
+    QVERIFY(firstBook);
+    QSignalSpy leftOpened(firstBook, &QAction::triggered);
+    QTest::mouseMove(open, open->actionGeometry(firstBook).center());
+    open->setActiveAction(firstBook);
+    QTest::mouseClick(open, Qt::LeftButton, Qt::NoModifier, open->actionGeometry(firstBook).center());
+    QVERIFY(!open->isVisible());
+    QCOMPARE(leftOpened.count(), 1);
+    rightClick(first, QMessageBox::Yes);
+    c.load();
+    QVERIFY(c.recentFiles().contains(second));
+    QVERIFY(!c.recentFiles().contains(first));
+    QVERIFY(QFile::exists(first));
+    rightClick(second, QMessageBox::Yes);
+    open->close();
+    w.close();
+    c.load();
+    QVERIFY(!c.recentFiles().contains(second));
+    QVERIFY(QFile::exists(second));
+}
+
+void TestMainWindow2::openMenuHasNoLimit()
+{
+    QTemporaryDir dir;
+    Cache seed(Cache::defaultCacheFilePath());
+    seed.clearRecent();
+    QStringList paths;
+    for (int i = 0; i < 100; ++i) {
+        const QString path = makeTxt(dir, QStringLiteral("book%1.txt").arg(i));
+        paths.append(path);
+        seed.upsertProgress({path, 0, 0, i});
+    }
+    seed.save();
+    MainWindow w;
+    auto *open = w.findChild<QMenu *>(QStringLiteral("openMenu"));
+    QVERIFY(open);
+    int count = 0;
+    for (QAction *action : open->actions()) {
+        QVERIFY(!action->text().contains(QStringLiteral("最近阅读")));
+        if (paths.contains(action->toolTip())) ++count;
+    }
+    QCOMPARE(count, 100);
+    w.show();
+    open->popup(w.mapToGlobal(QPoint(20, 20)));
+    QTest::qWait(20);
+    const int firstColumn = open->actionGeometry(open->actions().first()).x();
+    for (QAction *action : open->actions())
+        if (paths.contains(action->toolTip()))
+            QCOMPARE(open->actionGeometry(action).x(), firstColumn);
+    open->close();
+}
+
+void TestMainWindow2::tocFillsReadingAreaAndToggles()
+{
+    QTemporaryDir dir;
+    MainWindow w;
+    w.openBook(makeTxt(dir, QStringLiteral("toc.txt")));
+    w.show();
+    QTest::qWait(20);
+    QAction *toggle = nullptr;
+    for (QAction *action : w.menuBar()->actions())
+        if (action->text() == QStringLiteral("目录")) toggle = action;
+    QVERIFY(toggle);
+    QVERIFY(!toggle->menu());
+    auto *toc = w.findChild<QTreeWidget *>();
+    QVERIFY(toc);
+    QVERIFY(!toc->isVisible());
+    toggle->trigger();
+    QVERIFY(toc->isVisible());
+    QCOMPARE(toc->size(), w.centralWidget()->size());
+    w.resize(800, 600);
+    QTest::qWait(20);
+    QCOMPARE(toc->size(), w.centralWidget()->size());
+    toggle->trigger();
+    QVERIFY(!toc->isVisible());
+    toggle->trigger();
+    auto *chapter = toc->topLevelItem(2);
+    QVERIFY(chapter);
+    QTest::mouseClick(toc->viewport(), Qt::LeftButton, Qt::NoModifier, toc->visualItemRect(chapter).center());
+    QCOMPARE(w.currentChapter(), 2);
+    QVERIFY(!toc->isVisible());
+    toggle->trigger();
+    QTest::keyClick(toc, Qt::Key_Down);
+    QCOMPARE(toc->currentItem(), toc->topLevelItem(3));
+    QCOMPARE(w.currentChapter(), 2);
+    QTest::keyClick(toc, Qt::Key_Return);
+    QCOMPARE(w.currentChapter(), 3);
+    QVERIFY(!toc->isVisible());
+    toggle->trigger();
+    QTest::keyClick(toc, Qt::Key_Escape);
+    QVERIFY(!toc->isVisible());
 }
 
 void TestMainWindow2::mouseLeaveHideHotkeyToggles()

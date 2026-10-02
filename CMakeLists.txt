@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Test Network)
+find_package(LibArchive REQUIRED)
 qt_standard_project_setup()
 
 qt_add_executable(reader
@@ -30,6 +31,7 @@ add_library(reader_core STATIC
     src/core/ChapterParser.cpp src/core/ChapterParser.h
     src/core/Book.cpp src/core/Book.h
     src/core/TextBook.cpp src/core/TextBook.h
+    src/core/EpubBook.cpp src/core/EpubBook.h
     src/core/Page.cpp src/core/Page.h
     src/core/Settings.cpp src/core/Settings.h
     src/core/Cache.cpp src/core/Cache.h
@@ -37,7 +39,7 @@ add_library(reader_core STATIC
     src/core/NiriConfig.cpp src/core/NiriConfig.h
 )
 target_include_directories(reader_core PUBLIC src)
-target_link_libraries(reader_core PUBLIC Qt6::Core Qt6::Gui)
+target_link_libraries(reader_core PUBLIC Qt6::Core Qt6::Gui LibArchive::LibArchive)
 
 qt_add_executable(tst_textcodec tests/tst_textcodec.cpp)
 target_link_libraries(tst_textcodec PRIVATE reader_core Qt6::Test)
@@ -198,3 +200,8 @@ qt_add_executable(tst_niriconfig tests/tst_niriconfig.cpp)
 target_link_libraries(tst_niriconfig PRIVATE reader_core Qt6::Test)
 add_test(NAME niriconfig COMMAND tst_niriconfig)
 set_tests_properties(niriconfig PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_epubbook tests/tst_epubbook.cpp)
+target_link_libraries(tst_epubbook PRIVATE reader_core Qt6::Test Qt6::Widgets LibArchive::LibArchive)
+add_test(NAME epubbook COMMAND tst_epubbook)
+set_tests_properties(epubbook PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -3,3 +3,12 @@ build-*/
 *.user
 .cache/
 Reader-CachyOS/
+
+# Generated packaging artifacts
+packaging/pkg/
+packaging/src/
+packaging/reader-cachyos-git/
+packaging/*.pkg.tar.*
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

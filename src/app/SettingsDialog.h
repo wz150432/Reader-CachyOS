@@ -15,7 +15,7 @@ class SettingsDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit SettingsDialog(Settings *settings, QWidget *parent = nullptr);
+    explicit SettingsDialog(Settings *settings, QWidget *parent = nullptr, int minimumAlpha = 0);
 
 private slots:
     void pickBackgroundColor();

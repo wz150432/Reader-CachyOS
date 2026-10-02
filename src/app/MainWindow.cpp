@@ -15,7 +15,6 @@
 #include <QDateTime>
 #include <QDialogButtonBox>
 #include <QDir>
-#include <QDockWidget>
 #include <QEvent>
 #include <QFile>
 #include <QFileDialog>
@@ -26,6 +25,11 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMouseEvent>
+#include <QWidgetAction>
+#include <QPushButton>
+#include <QLabel>
+#include <QHBoxLayout>
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QRegularExpression>
@@ -73,16 +77,17 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_view, &ReadingView::hideWindowRequested, this, &MainWindow::showHideWindow);
     connect(m_view, &ReadingView::displaySettingsChanged, this, &MainWindow::onDisplaySettingsChanged);
 
-    auto *dock = new QDockWidget(QStringLiteral("目录"), this);
-    dock->setObjectName(QStringLiteral("tocDock"));
-    m_toc = new QTreeWidget(dock);
+    m_toc = new QTreeWidget(m_view);
+    m_toc->setObjectName(QStringLiteral("tocView"));
     m_toc->setHeaderHidden(true);
-    dock->setWidget(m_toc);
-    addDockWidget(Qt::LeftDockWidgetArea, dock);
-    dock->hide();
-    connect(m_toc, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item) {
+    m_toc->hide();
+    const auto openChapter = [this](QTreeWidgetItem *item) {
         m_view->goToChapter(item->data(0, Qt::UserRole).toInt());
-    });
+        m_toc->hide();
+        m_view->setFocus();
+    };
+    connect(m_toc, &QTreeWidget::itemClicked, this, openChapter);
+    connect(m_toc, &QTreeWidget::itemActivated, this, openChapter);
 
     auto *searchBar = addToolBar(QStringLiteral("搜索"));
     searchBar->setObjectName(QStringLiteral("searchBar"));
@@ -117,30 +122,31 @@ MainWindow::MainWindow(QWidget *parent)
 
 void MainWindow::buildMenus()
 {
-    QMenu *file = menuBar()->addMenu(QStringLiteral("文件"));
-    QMenu *openMenu = file->addMenu(QStringLiteral("打开(&O)"));
+    QMenu *openMenu = menuBar()->addMenu(QStringLiteral("文件"));
     openMenu->setObjectName(QStringLiteral("openMenu"));
+    openMenu->setStyleSheet(QStringLiteral("QMenu { menu-scrollable: 1; }"));
     openMenu->menuAction()->setObjectName(QStringLiteral("actOpen"));
     openMenu->menuAction()->setShortcut(QKeySequence::Open);
     connect(openMenu, &QMenu::aboutToShow, this, [this, openMenu] {
         populateOpenMenu(openMenu);
     });
-    m_deleteRecentMenu = new QMenu(QStringLiteral("从最近阅读删除"), openMenu);
-    m_deleteRecentMenu->setObjectName(QStringLiteral("deleteRecentMenu"));
     populateOpenMenu(openMenu);
-    QAction *clearRecent = file->addAction(QStringLiteral("清空(&C)"));
-    clearRecent->setObjectName(QStringLiteral("actClearRecent"));
-    connect(clearRecent, &QAction::triggered, this, &MainWindow::clearRecentList);
-    QAction *quit = file->addAction(QStringLiteral("退出(&X)"));
-    quit->setObjectName(QStringLiteral("actQuit"));
-    quit->setShortcut(QKeySequence::Quit);
-    connect(quit, &QAction::triggered, this, &MainWindow::quitApplication);
 
-    QMenu *tocMenu = menuBar()->addMenu(QStringLiteral("目录"));
-    QAction *tocToggle = tocMenu->addAction(QStringLiteral("显示/隐藏目录"));
+    QAction *tocToggle = menuBar()->addAction(QStringLiteral("目录"));
+    tocToggle->setObjectName(QStringLiteral("actToggleToc"));
     connect(tocToggle, &QAction::triggered, this, [this] {
-        if (QDockWidget *dock = findChild<QDockWidget *>(QStringLiteral("tocDock")))
-            dock->setVisible(!dock->isVisible());
+        if (m_toc->isVisible()) {
+            m_toc->hide();
+            m_view->setFocus();
+        } else {
+            if (!leaveEditModeIfActive())
+                return;
+            closeSearchBar();
+            m_toc->setGeometry(m_view->rect());
+            m_toc->show();
+            m_toc->raise();
+            m_toc->setFocus();
+        }
     });
 
     QMenu *bookmark = menuBar()->addMenu(QStringLiteral("书签"));
@@ -152,7 +158,7 @@ void MainWindow::buildMenus()
     QMenu *settings = menuBar()->addMenu(QStringLiteral("设置"));
     QAction *display = settings->addAction(QStringLiteral("显示设置"));
     connect(display, &QAction::triggered, this, [this] {
-        SettingsDialog dlg(&m_settings, this);
+        SettingsDialog dlg(&m_settings, this, menuBar()->isHidden() ? 0 : 1);
         if (dlg.exec() == QDialog::Accepted) {
             m_view->setSettings(m_settings.display);
             m_view->refreshLayout();
@@ -234,6 +240,8 @@ void MainWindow::openBook(const QString &path)
     saveProgress();
     m_book = std::move(book);
     m_currentPath = path;
+    m_currentRecordRemoved = false;
+    m_toc->hide();
     m_view->setBook(m_book);
     populateToc();
     if (saved) {
@@ -270,46 +278,30 @@ void MainWindow::populateToc()
 
 void MainWindow::populateOpenMenu(QMenu *menu)
 {
+    m_deleteConfirmation = nullptr;
     menu->clear();
-    QAction *header = menu->addAction(QStringLiteral("最近阅读"));
-    header->setEnabled(false);
     const QStringList recent = m_cache.recentFiles();
-    if (m_deleteRecentMenu)
-        m_deleteRecentMenu->clear();
     if (recent.isEmpty()) {
-        QAction *none = menu->addAction(QStringLiteral("暂无最近阅读"));
+        QAction *none = menu->addAction(QStringLiteral("暂无书籍"));
         none->setEnabled(false);
-        if (m_deleteRecentMenu)
-            m_deleteRecentMenu->setEnabled(false);
     } else {
-        const int count = qMin(recent.size(), 10);
-        for (int i = 0; i < count; ++i) {
-            const QString path = recent.at(i);
+        for (const QString &path : recent) {
             QAction *item = menu->addAction(QFileInfo(path).completeBaseName());
+            item->setData(path);
             item->setToolTip(path);
             item->setStatusTip(path);
             connect(item, &QAction::triggered, this, [this, path] {
                 openBook(path);
             });
         }
-        if (m_deleteRecentMenu) {
-            m_deleteRecentMenu->setEnabled(true);
-            for (int i = 0; i < count; ++i) {
-                const QString path = recent.at(i);
-                QAction *remove = m_deleteRecentMenu->addAction(QFileInfo(path).fileName());
-                remove->setToolTip(path);
-                connect(remove, &QAction::triggered, this, [this, path] {
-                    removeRecentFile(path);
-                });
-            }
-        }
     }
     menu->addSeparator();
-    if (m_deleteRecentMenu)
-        menu->addMenu(m_deleteRecentMenu);
     QAction *newBook = menu->addAction(QStringLiteral("打开新书..."));
     newBook->setObjectName(QStringLiteral("actOpenNew"));
     connect(newBook, &QAction::triggered, this, &MainWindow::chooseNewBook);
+    QAction *clearRecent = menu->addAction(QStringLiteral("清空(&C)"));
+    clearRecent->setObjectName(QStringLiteral("actClearRecent"));
+    connect(clearRecent, &QAction::triggered, this, &MainWindow::clearRecentList);
 }
 
 void MainWindow::refreshOpenMenu()
@@ -332,7 +324,7 @@ void MainWindow::chooseNewBook()
 {
     const QString path = QFileDialog::getOpenFileName(
         this, QStringLiteral("打开新书"), QString(),
-        QStringLiteral("书籍文件 (*.txt);;所有文件 (*)"));
+        QStringLiteral("书籍文件 (*.txt *.epub *.TXT *.EPUB);;所有文件 (*)"));
     if (!path.isEmpty())
         openBook(path);
 }
@@ -430,8 +422,8 @@ void MainWindow::openBookmarkList()
 void MainWindow::onDisplaySettingsChanged(const DisplaySettings &settings)
 {
     m_settings.display = settings;
-    m_settings.save();
     applyWindowOpacity();
+    m_settings.save();
 }
 
 void MainWindow::applyKeyset()
@@ -439,12 +431,70 @@ void MainWindow::applyKeyset()
     m_view->setKeyset(m_settings.keyset);
     if (QAction *open = findChild<QAction *>(QStringLiteral("actOpen")))
         open->setShortcut(m_settings.keyset.shortcut(KeyAction::OpenFile));
-    if (QAction *quit = findChild<QAction *>(QStringLiteral("actQuit")))
-        quit->setShortcut(m_settings.keyset.shortcut(KeyAction::Quit));
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
+    if (obj == m_view && event->type() == QEvent::Resize && m_toc)
+        m_toc->setGeometry(m_view->rect());
+    if (obj == m_toc && event->type() == QEvent::KeyPress
+        && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
+        m_toc->hide();
+        m_view->setFocus();
+        return true;
+    }
+    if (auto *menu = qobject_cast<QMenu *>(obj);
+        menu && menu->objectName() == QStringLiteral("openMenu")) {
+        // QMenu can activate the highlighted book on release even though the
+        // matching right-button press was consumed to show confirmation.
+        if (event->type() == QEvent::MouseButtonRelease
+            && static_cast<QMouseEvent *>(event)->button() == Qt::RightButton)
+            return true;
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (mouse->button() == Qt::RightButton) {
+                QAction *action = menu->actionAt(mouse->position().toPoint());
+                const QString path = action ? action->data().toString() : QString();
+                if (!path.isEmpty()) {
+                    if (m_deleteConfirmation) {
+                        menu->removeAction(m_deleteConfirmation);
+                        m_deleteConfirmation->deleteLater();
+                    }
+                    auto *confirmation = new QWidgetAction(menu);
+                    confirmation->setObjectName(QStringLiteral("deleteConfirmation"));
+                    auto *panel = new QWidget(menu);
+                    auto *layout = new QHBoxLayout(panel);
+                    layout->setContentsMargins(8, 4, 8, 4);
+                    layout->addWidget(new QLabel(QStringLiteral("删除记录？"), panel));
+                    auto *remove = new QPushButton(QStringLiteral("删除"), panel);
+                    remove->setObjectName(QStringLiteral("confirmDelete"));
+                    auto *cancel = new QPushButton(QStringLiteral("取消"), panel);
+                    cancel->setObjectName(QStringLiteral("cancelDelete"));
+                    layout->addWidget(remove);
+                    layout->addWidget(cancel);
+                    confirmation->setDefaultWidget(panel);
+                    const auto actions = menu->actions();
+                    const int index = actions.indexOf(action);
+                    menu->insertAction(index + 1 < actions.size() ? actions.at(index + 1) : nullptr,
+                                       confirmation);
+                    m_deleteConfirmation = confirmation;
+                    const auto dismiss = [this, menu, confirmation] {
+                        menu->removeAction(confirmation);
+                        if (m_deleteConfirmation == confirmation)
+                            m_deleteConfirmation = nullptr;
+                        confirmation->deleteLater();
+                    };
+                    connect(cancel, &QPushButton::clicked, this, dismiss);
+                    connect(remove, &QPushButton::clicked, this, [this, path, dismiss] {
+                        dismiss();
+                        removeRecentFile(path);
+                    });
+                    cancel->setFocus();
+                }
+                return true;
+            }
+        }
+    }
     if (obj == m_searchEdit && event->type() == QEvent::KeyPress
         && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
         closeSearchBar();
@@ -458,6 +508,19 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
         if (qApp->activeModalWidget() || qobject_cast<QLineEdit *>(focus))
             return false;
         auto *ke = static_cast<QKeyEvent *>(event);
+        if (m_toc->isVisible() && (focus == m_toc || m_toc->isAncestorOf(focus))
+            && ke->modifiers() == Qt::NoModifier) {
+            switch (ke->key()) {
+            case Qt::Key_Up: case Qt::Key_Down: case Qt::Key_Left: case Qt::Key_Right:
+            case Qt::Key_PageUp: case Qt::Key_PageDown: case Qt::Key_Home: case Qt::Key_End:
+            case Qt::Key_Return: case Qt::Key_Enter: case Qt::Key_Space:
+                if (event->type() == QEvent::ShortcutOverride)
+                    event->accept();
+                return false;
+            default:
+                break;
+            }
+        }
         const QKeySequence seq(ke->keyCombination());
         KeyAction matched = static_cast<KeyAction>(-1);
         const QList<KeyAction> actions = m_settings.keyset.actions();
@@ -556,6 +619,11 @@ void MainWindow::toggleEditMode()
     if (m_currentPath.isEmpty() || !m_book) {
         QMessageBox::information(this, QStringLiteral("编辑模式"),
                                  QStringLiteral("请先打开一本书"));
+        return;
+    }
+    if (QFileInfo(m_currentPath).suffix().compare(QStringLiteral("txt"), Qt::CaseInsensitive) != 0) {
+        QMessageBox::information(this, QStringLiteral("编辑模式"),
+                                 QStringLiteral("编辑模式仅支持 TXT 文件，EPUB 可正常阅读。"));
         return;
     }
     QFile f(m_currentPath);
@@ -659,7 +727,7 @@ void MainWindow::updateTitle()
 
 void MainWindow::saveProgress()
 {
-    if (m_currentPath.isEmpty())
+    if (m_currentPath.isEmpty() || m_currentRecordRemoved)
         return;
     m_cache.upsertProgress({m_currentPath, m_view->currentChapter(), m_view->currentPage(),
                             QDateTime::currentSecsSinceEpoch()});
@@ -668,6 +736,7 @@ void MainWindow::saveProgress()
 
 void MainWindow::clearRecentList()
 {
+    m_currentRecordRemoved = !m_currentPath.isEmpty();
     m_cache.clearRecent();
     m_cache.save();
     refreshOpenMenu();
@@ -675,6 +744,8 @@ void MainWindow::clearRecentList()
 
 void MainWindow::removeRecentFile(const QString &path)
 {
+    if (path == m_currentPath)
+        m_currentRecordRemoved = true;
     m_cache.removeRecentFile(path);
     m_cache.save();
     refreshOpenMenu();
@@ -906,6 +977,7 @@ void MainWindow::toggleHideBorder()
     // 隐藏/显示窗口顶部的菜单栏（文件/目录/书签/设置/窗口/帮助）
     if (menuBar()) {
         menuBar()->setVisible(!menuBar()->isVisible());
+        applyWindowOpacity();
     }
 }
 
@@ -943,6 +1015,12 @@ void MainWindow::applyWindowOpacity()
     setWindowOpacity(1.0);
     if (!m_view)
         return;
+    // 菜单栏显示时禁止完全透明，包括恢复菜单栏及加载已保存设置时。
+    if (menuBar() && !menuBar()->isHidden() && m_settings.display.windowAlpha == 0) {
+        m_settings.display.windowAlpha = 1;
+        m_view->setSettings(m_settings.display);
+        m_settings.save();
+    }
     const bool fullyTransparent = m_settings.display.windowAlpha == 0;
     if (menuBar()) {
         menuBar()->setStyleSheet(fullyTransparent
@@ -955,13 +1033,7 @@ void MainWindow::applyWindowOpacity()
     const QList<QToolBar *> toolbars = findChildren<QToolBar *>();
     for (QToolBar *bar : toolbars)
         bar->setStyleSheet(toolbarStyle);
-    const QString dockStyle = QStringLiteral(
-        "QDockWidget { background: palette(window); }"
-        "QDockWidget::title { background: palette(button); }"
-        "QTreeWidget { background: palette(base); }");
-    const QList<QDockWidget *> docks = findChildren<QDockWidget *>();
-    for (QDockWidget *dock : docks)
-        dock->setStyleSheet(dockStyle);
+    m_toc->setStyleSheet(QStringLiteral("QTreeWidget { background: palette(base); }"));
     m_view->update();
     if (!QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
         return;

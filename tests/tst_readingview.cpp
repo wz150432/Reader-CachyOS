@@ -13,6 +13,7 @@ class TestReadingView : public QObject
 private slots:
     void setBookAndNavigate();
     void keyAndWheelNavigation();
+    void leftClickPagesOnRelease();
 };
 
 static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
@@ -71,6 +72,22 @@ void TestReadingView::keyAndWheelNavigation()
                       Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
     QApplication::sendEvent(&view, &wheel);
     QVERIFY(view.pixelOffset() > 0.0 || view.currentPage() > first);
+}
+
+void TestReadingView::leftClickPagesOnRelease()
+{
+    QTemporaryDir dir;
+    auto book = makeBook(dir);
+    QVERIFY(book);
+    ReadingView view;
+    view.setBook(book);
+    view.resize(300, 100);
+    view.show();
+    QVERIFY(view.pageCount() > 1);
+    QTest::mousePress(&view, Qt::LeftButton);
+    QCOMPARE(view.currentPage(), 0);
+    QTest::mouseRelease(&view, Qt::LeftButton);
+    QCOMPARE(view.currentPage(), 1);
 }
 
 QTEST_MAIN(TestReadingView)

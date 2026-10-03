@@ -11,6 +11,8 @@
 #include <QPixmap>
 #include <QUrl>
 #include <QWheelEvent>
+#include <QWindow>
+#include <QApplication>
 
 namespace {
 
@@ -351,8 +353,12 @@ void ReadingView::resizeEvent(QResizeEvent *event)
 
 void ReadingView::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton)
+    if (event->button() == Qt::LeftButton) {
         m_leftPressed = true;
+        m_windowDragStarted = false;
+        m_leftPressPosition = event->position().toPoint();
+        m_leftPressTimer.start();
+    }
     if (event->button() == Qt::RightButton)
         m_rightPressed = true;
     if (m_leftPressed && m_rightPressed && m_behavior.doubleClickHide) {
@@ -363,7 +369,6 @@ void ReadingView::mousePressEvent(QMouseEvent *event)
         return;
     }
     if (event->button() == Qt::LeftButton) {
-        pageDown();
         event->accept();
         return;
     }
@@ -377,11 +382,33 @@ void ReadingView::mousePressEvent(QMouseEvent *event)
 
 void ReadingView::mouseReleaseEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton)
+    if (event->button() == Qt::LeftButton) {
+        const bool quickClick = m_leftPressed && !m_windowDragStarted
+                                && m_leftPressTimer.isValid()
+                                && m_leftPressTimer.elapsed() < 250;
         m_leftPressed = false;
+        m_windowDragStarted = false;
+        if (quickClick)
+            pageDown();
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::RightButton)
         m_rightPressed = false;
     QWidget::mouseReleaseEvent(event);
+}
+
+void ReadingView::mouseMoveEvent(QMouseEvent *event)
+{
+    if (m_leftPressed && !m_windowDragStarted
+        && (event->position().toPoint() - m_leftPressPosition).manhattanLength()
+               >= QApplication::startDragDistance()) {
+        if (QWindow *handle = window()->windowHandle())
+            m_windowDragStarted = handle->startSystemMove();
+        event->accept();
+        return;
+    }
+    QWidget::mouseMoveEvent(event);
 }
 
 void ReadingView::dragEnterEvent(QDragEnterEvent *event)

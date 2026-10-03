@@ -2,6 +2,7 @@
 #include <QWidget>
 #include <QPainter>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <memory>
 #include "core/Book.h"
 #include "core/Keyset.h"
@@ -67,6 +68,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
@@ -103,6 +105,9 @@ private:
     int m_matchStart = -1;
     int m_matchEnd = -1;
     bool m_leftPressed = false;
+    bool m_windowDragStarted = false;
+    QPoint m_leftPressPosition;
+    QElapsedTimer m_leftPressTimer;
     bool m_rightPressed = false;
     bool m_searchWholeBook = false;
     qreal m_pixelOffset = 0.0;

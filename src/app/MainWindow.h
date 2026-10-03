@@ -11,6 +11,7 @@
 class QTreeWidget;
 class QLineEdit;
 class QMenu;
+class QMenuBar;
 class QTimer;
 class QSystemTrayIcon;
 class QWidgetAction;
@@ -97,6 +98,7 @@ private:
     bool saveEditMode();
     bool leaveEditModeIfActive();
     ReadingView *m_view = nullptr;
+    QMenuBar *m_dragMenuBar = nullptr;
     QTreeWidget *m_toc = nullptr;
     QLineEdit *m_searchEdit = nullptr;
     bool m_currentRecordRemoved = false;

@@ -140,6 +140,8 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     buildMenus();
+    m_dragMenuBar = menuBar();
+    m_dragMenuBar->installEventFilter(this);
     updateTitle();
     resize(960, 720);
     createResizeGrips();
@@ -548,6 +550,14 @@ void MainWindow::applyKeyset()
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
+    if (obj == m_dragMenuBar && event->type() == QEvent::MouseButtonPress) {
+        auto *mouse = static_cast<QMouseEvent *>(event);
+        if (mouse->button() == Qt::LeftButton
+            && !m_dragMenuBar->actionAt(mouse->position().toPoint())) {
+            if (QWindow *handle = windowHandle())
+                return handle->startSystemMove();
+        }
+    }
     if (obj == m_view && event->type() == QEvent::Resize && m_toc)
         m_toc->setGeometry(m_view->rect());
     if (obj == m_toc && event->type() == QEvent::KeyPress

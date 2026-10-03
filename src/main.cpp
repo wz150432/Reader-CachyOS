@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QIcon>
 #include <QPalette>
 #include <QSurfaceFormat>
 #include <QStyleFactory>
@@ -21,10 +22,12 @@ int main(int argc, char *argv[])
         QString error;
         if (reader::RemoteControl::sendCommand(args.at(1).mid(2), &error))
             return 0;
+        return 1;
     }
     app.setApplicationName(QStringLiteral("Reader"));
     app.setOrganizationName(QStringLiteral("Reader"));
     app.setDesktopFileName(QStringLiteral("reader.desktop"));
+    app.setWindowIcon(QIcon(QStringLiteral(":/reader/icon.svg")));
     if (QStyle *style = QStyleFactory::create(QStringLiteral("Fusion")))
         app.setStyle(style);
     QPalette pal;
@@ -55,5 +58,6 @@ int main(int argc, char *argv[])
     if (!w.hasSavedWindowGeometry())
         w.resize(960, 720);
     w.show();
+    w.restoreNiriFloatingPosition();
     return app.exec();
 }

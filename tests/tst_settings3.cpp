@@ -12,6 +12,7 @@ private slots:
     void tagsRoundtrip();
     void defaultsFilled();
     void advancedRegexRoundtrip();
+    void niriPositionRoundtrip();
 };
 
 void TestSettings3::behaviorRoundtrip()
@@ -83,6 +84,20 @@ void TestSettings3::advancedRegexRoundtrip()
     Settings t(path);
     t.load();
     QCOMPARE(t.chapterRegex, QStringLiteral("^第[0-9]+章 .*$"));
+}
+
+void TestSettings3::niriPositionRoundtrip()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("config.json"));
+    Settings saved(path);
+    saved.niriFloatingPosition = QPoint(321, 456);
+    saved.hasNiriFloatingPosition = true;
+    saved.save();
+    Settings loaded(path);
+    loaded.load();
+    QVERIFY(loaded.hasNiriFloatingPosition);
+    QCOMPARE(loaded.niriFloatingPosition, QPoint(321, 456));
 }
 
 QTEST_APPLESS_MAIN(TestSettings3)

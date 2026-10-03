@@ -12,6 +12,7 @@ private slots:
     void invalidOpacityRejected();
     void globalHideBindAddAndRemove();
     void readerBlockWithNestedShadowStaysIntact();
+    void savedPositionOpensAtTargetAndHidesPositioningWindow();
 };
 
 void TestNiriConfig::updatesExistingReaderBlock()
@@ -35,7 +36,7 @@ void TestNiriConfig::updatesExistingReaderBlock()
     QVERIFY(content.contains(QStringLiteral("draw-border-with-background false")));
     // 幂等：再次调用仍只有一行 opacity
     QVERIFY(patchReaderOpacity(&content, 0.25));
-    QCOMPARE(content.count(QStringLiteral("opacity ")), 1);
+    QCOMPARE(content.count(QStringLiteral("opacity 0.25")), 1);
     QVERIFY(content.contains(QStringLiteral("opacity 0.25")));
 }
 
@@ -83,7 +84,20 @@ void TestNiriConfig::readerBlockWithNestedShadowStaysIntact()
         "}\n");
     QVERIFY(patchReaderOpacity(&content, 1.0));
     QCOMPARE(content.count(QStringLiteral("draw-border-with-background false")), 1);
-    QCOMPARE(content.count(QStringLiteral("window-rule {")), 1);
+    QCOMPARE(content.count(QStringLiteral("window-rule {")), 2);
+}
+
+void TestNiriConfig::savedPositionOpensAtTargetAndHidesPositioningWindow()
+{
+    QString content = QStringLiteral("window-rule {\n    match app-id=\"zoom\"\n}\n");
+    QVERIFY(patchReaderOpacity(&content, 1.0, QPoint(220, 160)));
+    QVERIFY(content.contains(QStringLiteral("default-floating-position x=220 y=160")));
+    QVERIFY(content.contains(QStringLiteral("match app-id=r\"^reader(\\.desktop)?$\" title=\"^Reader positioning$\"")));
+    QVERIFY(content.contains(QStringLiteral("opacity 0.0")));
+    QVERIFY(patchReaderOpacity(&content, 1.0, QPoint(300, 200)));
+    QVERIFY(!content.contains(QStringLiteral("default-floating-position x=220 y=160")));
+    QVERIFY(content.contains(QStringLiteral("default-floating-position x=300 y=200")));
+    QCOMPARE(content.count(QStringLiteral("reader-positioning-transparent")), 1);
 }
 
 QTEST_APPLESS_MAIN(TestNiriConfig)

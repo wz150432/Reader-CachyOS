@@ -2,7 +2,8 @@
 #include <QStringList>
 namespace reader {
 
-bool patchReaderOpacity(QString *content, double opacity)
+bool patchReaderOpacity(QString *content, double opacity,
+                        std::optional<QPoint> floatingPosition)
 {
     if (!content || opacity < 0.0 || opacity > 1.0)
         return false;
@@ -14,6 +15,10 @@ bool patchReaderOpacity(QString *content, double opacity)
     newBlock += QStringLiteral("    match app-id=r\"^reader(\\.desktop)?$\"\n");
     newBlock += QStringLiteral("    match title=r\".* - Reader$\"\n");
     newBlock += QStringLiteral("    open-floating true\n");
+    if (floatingPosition) {
+        newBlock += QStringLiteral("    default-floating-position x=%1 y=%2\n")
+                        .arg(floatingPosition->x()).arg(floatingPosition->y());
+    }
     newBlock += QStringLiteral("    opacity ") + opacityText + QLatin1Char('\n');
     newBlock += QStringLiteral("    shadow { off; }\n");
     newBlock += QStringLiteral("    draw-border-with-background false\n");
@@ -22,6 +27,7 @@ bool patchReaderOpacity(QString *content, double opacity)
     const QString target = QStringLiteral("reader(\\.desktop)");
     const QString blockStart = QStringLiteral("window-rule {");
     int pos = content->indexOf(blockStart);
+    bool replaced = false;
     while (pos >= 0) {
         int depth = 0;
         int close = -1;
@@ -42,14 +48,25 @@ bool patchReaderOpacity(QString *content, double opacity)
         const QString block = content->mid(pos, close - pos + 1);
         if (block.contains(target)) {
             content->replace(pos, close - pos + 1, newBlock);
-            return true;
+            replaced = true;
+            break;
         }
         pos = content->indexOf(blockStart, close);
     }
 
-    if (!content->endsWith(QLatin1Char('\n')))
-        content->append(QLatin1Char('\n'));
-    content->append(newBlock + QLatin1Char('\n'));
+    if (!replaced) {
+        if (!content->endsWith(QLatin1Char('\n')))
+            content->append(QLatin1Char('\n'));
+        content->append(newBlock + QLatin1Char('\n'));
+    }
+    if (!content->contains(QStringLiteral("// reader-positioning-transparent"))) {
+        content->append(QStringLiteral(
+            "// reader-positioning-transparent\n"
+            "window-rule {\n"
+            "    match app-id=r\"^reader(\\.desktop)?$\" title=\"^Reader positioning$\"\n"
+            "    opacity 0.0\n"
+            "}\n"));
+    }
     return true;
 }
 

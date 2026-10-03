@@ -39,6 +39,7 @@ public:
     bool hasSavedWindowGeometry() const { return !m_settings.windowGeometry.isEmpty(); }
     bool editModeActive() const { return m_editor && m_editor->isVisible(); }
     void applyWindowState();
+    void restoreNiriFloatingPosition();
     void toggleFullscreen();
     void toggleAlwaysOnTop();
     void toggleHideBorder();
@@ -54,6 +55,7 @@ protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private slots:
     void onChapterChanged(int index);
@@ -80,6 +82,13 @@ private:
     void syncGlobalHide();
     void handleKeyAction(KeyAction action);
     void saveWindowState();
+    void rememberNiriFloatingPosition();
+    void prepareNiriFloatingPositionRestore();
+    void tryRestoreNiriFloatingPosition(int attemptsLeft, bool moveIssued, int serial);
+    void finishNiriFloatingPositionRestore();
+    void syncNiriWindowRule();
+    void createResizeGrips();
+    void updateResizeGrips();
     void toggleMouseLeaveHide();
     void applyMouseLeaveHideMode();
     void onMouseWatchTick();
@@ -96,11 +105,16 @@ private:
     QSystemTrayIcon *m_tray = nullptr;
     RemoteControl *m_control = nullptr;
     QTimer *m_mouseWatchTimer = nullptr;
+    QList<QWidget *> m_resizeGrips;
     QRect m_hiddenGeometry;
     bool m_topHintShown = false;
     bool m_hiddenWasMaximized = false;
     bool m_hiddenByMouseLeave = false;
     bool m_globalHideBindReady = false;
+    bool m_niriRuleReady = false;
+    bool m_positioningWindow = false;
+    int m_niriRestoreSerial = 0;
+    QString m_titleBeforePositioning;
     qint64 m_leaveHideIgnoreUntil = 0;
     Cache m_cache;
     Settings m_settings;

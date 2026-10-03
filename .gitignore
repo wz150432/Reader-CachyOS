@@ -10,5 +10,8 @@ packaging/src/
 packaging/reader-cachyos-git/
 packaging/*.pkg.tar.*
 
+# Generated release packages, source archives, notes, checksums, and build logs
+/release/
+
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/

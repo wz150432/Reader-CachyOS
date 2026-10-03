@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/reader">
+    <file alias="icon.svg">../../packaging/reader.svg</file>
+  </qresource>
+</RCC>

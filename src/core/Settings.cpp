@@ -40,6 +40,13 @@ void Settings::load()
     const QJsonObject window = doc.object().value(QStringLiteral("window")).toObject();
     windowGeometry = QByteArray::fromBase64(window.value(QStringLiteral("geometry")).toString().toUtf8());
     windowState = QByteArray::fromBase64(window.value(QStringLiteral("state")).toString().toUtf8());
+    const QJsonObject niriPosition = window.value(QStringLiteral("niri_floating_position")).toObject();
+    if (niriPosition.value(QStringLiteral("x")).isDouble()
+        && niriPosition.value(QStringLiteral("y")).isDouble()) {
+        niriFloatingPosition = QPoint(niriPosition.value(QStringLiteral("x")).toInt(),
+                                      niriPosition.value(QStringLiteral("y")).toInt());
+        hasNiriFloatingPosition = true;
+    }
 }
 
 void Settings::save() const
@@ -59,6 +66,12 @@ void Settings::save() const
     QJsonObject window;
     window.insert(QStringLiteral("geometry"), QString::fromLatin1(windowGeometry.toBase64()));
     window.insert(QStringLiteral("state"), QString::fromLatin1(windowState.toBase64()));
+    if (hasNiriFloatingPosition) {
+        QJsonObject position;
+        position.insert(QStringLiteral("x"), niriFloatingPosition.x());
+        position.insert(QStringLiteral("y"), niriFloatingPosition.y());
+        window.insert(QStringLiteral("niri_floating_position"), position);
+    }
     root.insert(QStringLiteral("window"), window);
     f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
     f.commit();

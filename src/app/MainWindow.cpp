@@ -8,17 +8,21 @@
 #include "app/SettingsDialog.h"
 #include "app/TagsetDialog.h"
 #include "core/NiriConfig.h"
+#include "core/NiriWindow.h"
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QCursor>
 #include <QDateTime>
+#include <QDesktopServices>
+#include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QEvent>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QIcon>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -27,6 +31,7 @@
 #include <QMenuBar>
 #include <QMouseEvent>
 #include <QWidgetAction>
+#include <QWindow>
 #include <QPushButton>
 #include <QLabel>
 #include <QHBoxLayout>
@@ -41,10 +46,39 @@
 #include <QToolTip>
 #include <QToolBar>
 #include <QTreeWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <utility>
 
 namespace reader {
+
+class ResizeGrip final : public QWidget
+{
+public:
+    ResizeGrip(QWidget *parent, Qt::Edges edges, Qt::CursorShape cursor,
+               const QString &name)
+        : QWidget(parent), m_edges(edges)
+    {
+        setObjectName(name);
+        setCursor(cursor);
+        setAutoFillBackground(false);
+    }
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton) {
+            if (QWindow *handle = window()->windowHandle())
+                handle->startSystemResize(m_edges);
+            event->accept();
+            return;
+        }
+        QWidget::mousePressEvent(event);
+    }
+
+private:
+    Qt::Edges m_edges;
+};
 
 static QString niriKeyFromSequence(const QKeySequence &seq)
 {
@@ -108,6 +142,7 @@ MainWindow::MainWindow(QWidget *parent)
     buildMenus();
     updateTitle();
     resize(960, 720);
+    createResizeGrips();
     applyWindowOpacity();
     createTrayIcon();
     m_mouseWatchTimer = new QTimer(this);
@@ -215,13 +250,91 @@ void MainWindow::buildMenus()
         resetSettings();
     });
 
-    QMenu *help = menuBar()->addMenu(QStringLiteral("帮助"));
-    QAction *about = help->addAction(QStringLiteral("关于 ..."));
+    QAction *about = menuBar()->addAction(QStringLiteral("关于"));
+    about->setObjectName(QStringLiteral("actAbout"));
     connect(about, &QAction::triggered, this, [this] {
-        QMessageBox::about(this, QStringLiteral("关于"),
-            QStringLiteral("Reader（CachyOS 原生版）\n\n"
-                           "本地 TXT/EPUB/MOBI 阅读器，功能参考开源项目 binbyu/Reader。\n"
-                           "本版本：TXT 阅读核心（第二阶段进行中）。"));
+        const QUrl projectUrl(QStringLiteral("https://github.com/wz150432/Reader-CachyOS"));
+        QDialog dialog(this);
+        dialog.setObjectName(QStringLiteral("aboutDialog"));
+        dialog.setWindowTitle(QStringLiteral("关于 Reader"));
+        dialog.setWindowIcon(QIcon(QStringLiteral(":/reader/icon.svg")));
+        dialog.setFixedWidth(480);
+        dialog.setStyleSheet(QStringLiteral(
+            "QDialog#aboutDialog { background: #ffffff; }"
+            "QLabel#aboutTitle { color: #173447; font-size: 23px; font-weight: 700; }"
+            "QLabel#aboutSubtitle { color: #526b78; font-size: 13px; }"
+            "QLabel#projectCaption { color: #526b78; font-size: 12px; }"
+            "QLabel#projectLink { color: #176487; font-size: 13px; }"
+            "QPushButton#projectButton { background: #246b8b; color: white; border: none; "
+            "border-radius: 7px; padding: 9px 16px; font-weight: 600; }"
+            "QPushButton#projectButton:hover { background: #185775; }"
+            "QPushButton#projectButton:focus { border: 2px solid #83b9d1; }"
+            "QPushButton#closeAboutButton { background: #edf3f6; color: #173447; border: none; "
+            "border-radius: 7px; padding: 9px 16px; }"
+            "QPushButton#closeAboutButton:hover { background: #dceaf0; }"
+            "QPushButton#closeAboutButton:focus { border: 2px solid #83b9d1; }"));
+
+        auto *outer = new QVBoxLayout(&dialog);
+        outer->setContentsMargins(28, 26, 28, 24);
+        outer->setSpacing(0);
+
+        auto *intro = new QHBoxLayout;
+        intro->setSpacing(18);
+        auto *icon = new QLabel(&dialog);
+        icon->setObjectName(QStringLiteral("aboutIcon"));
+        icon->setPixmap(QIcon(QStringLiteral(":/reader/icon.svg")).pixmap(72, 72));
+        icon->setFixedSize(72, 72);
+        intro->addWidget(icon);
+        auto *titles = new QVBoxLayout;
+        titles->setSpacing(4);
+        auto *title = new QLabel(QStringLiteral("Reader"), &dialog);
+        title->setObjectName(QStringLiteral("aboutTitle"));
+        titles->addWidget(title);
+        auto *subtitle = new QLabel(QStringLiteral("安静地读完一本书"), &dialog);
+        subtitle->setObjectName(QStringLiteral("aboutSubtitle"));
+        titles->addWidget(subtitle);
+        intro->addLayout(titles);
+        intro->addStretch();
+        outer->addLayout(intro);
+
+        outer->addSpacing(24);
+        auto *description = new QLabel(QStringLiteral("离线 TXT / EPUB 阅读器，专注本地阅读。"), &dialog);
+        description->setStyleSheet(QStringLiteral("color: #284759; font-size: 14px;"));
+        outer->addWidget(description);
+        outer->addSpacing(24);
+
+        auto *caption = new QLabel(QStringLiteral("项目主页"), &dialog);
+        caption->setObjectName(QStringLiteral("projectCaption"));
+        outer->addWidget(caption);
+        outer->addSpacing(4);
+        auto *link = new QLabel(&dialog);
+        link->setObjectName(QStringLiteral("projectLink"));
+        link->setTextFormat(Qt::RichText);
+        link->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        link->setOpenExternalLinks(true);
+        link->setText(QStringLiteral("<a href=\"%1\" style=\"color:#176487; text-decoration:underline;\">%1</a>")
+                          .arg(projectUrl.toString()));
+        outer->addWidget(link);
+
+        outer->addSpacing(26);
+        auto *buttons = new QHBoxLayout;
+        buttons->setSpacing(10);
+        auto *support = new QLabel(QStringLiteral("喜欢这个项目？欢迎点个 Star。"), &dialog);
+        support->setStyleSheet(QStringLiteral("color: #526b78; font-size: 12px;"));
+        buttons->addWidget(support);
+        buttons->addStretch();
+        auto *close = new QPushButton(QStringLiteral("关闭"), &dialog);
+        close->setObjectName(QStringLiteral("closeAboutButton"));
+        connect(close, &QPushButton::clicked, &dialog, &QDialog::reject);
+        buttons->addWidget(close);
+        auto *open = new QPushButton(QStringLiteral("在 GitHub 查看"), &dialog);
+        open->setObjectName(QStringLiteral("projectButton"));
+        connect(open, &QPushButton::clicked, &dialog, [projectUrl] {
+            QDesktopServices::openUrl(projectUrl);
+        });
+        buttons->addWidget(open);
+        outer->addLayout(buttons);
+        dialog.exec();
     });
     applyKeyset();
 }
@@ -786,6 +899,7 @@ void MainWindow::showHideWindow()
                 || m_globalHideBindReady;
             if (!canRestore)
                 return;
+            rememberNiriFloatingPosition();
             hide();
             return;
         }
@@ -795,6 +909,7 @@ void MainWindow::showHideWindow()
         if (m_hiddenWasMaximized)
             showMaximized();
         else {
+            prepareNiriFloatingPositionRestore();
             if (!m_hiddenGeometry.isEmpty())
                 setGeometry(m_hiddenGeometry);
             show();
@@ -802,6 +917,7 @@ void MainWindow::showHideWindow()
         raise();
         activateWindow();
         m_view->setFocus();
+        restoreNiriFloatingPosition();
         // m_leaveHideIgnoreUntil = QDateTime::currentMSecsSinceEpoch() + 1000;
     }
 }
@@ -821,10 +937,72 @@ void MainWindow::applyWindowState()
         restoreGeometry(m_settings.windowGeometry);
     if (!m_settings.windowState.isEmpty())
         restoreState(m_settings.windowState);
+    prepareNiriFloatingPositionRestore();
+}
+
+void MainWindow::rememberNiriFloatingPosition()
+{
+    const auto window = currentNiriReaderWindow();
+    if (!window)
+        return;
+    m_settings.niriFloatingPosition = window->position;
+    m_settings.hasNiriFloatingPosition = true;
+    m_settings.save();
+    syncNiriWindowRule();
+}
+
+void MainWindow::prepareNiriFloatingPositionRestore()
+{
+    if (!m_settings.hasNiriFloatingPosition || !m_niriRuleReady
+        || qEnvironmentVariableIsEmpty("NIRI_SOCKET"))
+        return;
+    if (!m_positioningWindow)
+        m_titleBeforePositioning = windowTitle();
+    m_positioningWindow = true;
+    setWindowTitle(QStringLiteral("Reader positioning"));
+}
+
+void MainWindow::restoreNiriFloatingPosition()
+{
+    if (!m_settings.hasNiriFloatingPosition || qEnvironmentVariableIsEmpty("NIRI_SOCKET"))
+        return;
+    const int serial = ++m_niriRestoreSerial;
+    QTimer::singleShot(0, this, [this, serial] {
+        tryRestoreNiriFloatingPosition(16, false, serial);
+    });
+}
+
+void MainWindow::finishNiriFloatingPositionRestore()
+{
+    if (!m_positioningWindow)
+        return;
+    m_positioningWindow = false;
+    setWindowTitle(m_titleBeforePositioning);
+}
+
+void MainWindow::tryRestoreNiriFloatingPosition(int attemptsLeft, bool moveIssued, int serial)
+{
+    if (serial != m_niriRestoreSerial || !isVisible())
+        return;
+    const auto window = currentNiriReaderWindow();
+    if (window && (window->position - m_settings.niriFloatingPosition).manhattanLength() <= 2) {
+        finishNiriFloatingPositionRestore();
+        return;
+    }
+    if (window && !moveIssued)
+        moveIssued = moveNiriReaderWindow(window->id, m_settings.niriFloatingPosition);
+    if (attemptsLeft > 1) {
+        QTimer::singleShot(80, this, [this, attemptsLeft, moveIssued, serial] {
+            tryRestoreNiriFloatingPosition(attemptsLeft - 1, moveIssued, serial);
+        });
+    } else {
+        finishNiriFloatingPositionRestore();
+    }
 }
 
 void MainWindow::saveWindowState()
 {
+    rememberNiriFloatingPosition();
     m_settings.windowGeometry = saveGeometry();
     m_settings.windowState = saveState();
     m_settings.save();
@@ -902,6 +1080,61 @@ void MainWindow::resizeEvent(QResizeEvent *event)
     if (m_editor && m_editor->isVisible())
         m_editor->setGeometry(m_view->rect());
     QMainWindow::resizeEvent(event);
+    updateResizeGrips();
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::WindowStateChange)
+        updateResizeGrips();
+}
+
+void MainWindow::createResizeGrips()
+{
+    const auto add = [this](Qt::Edges edges, Qt::CursorShape cursor, const char *name) {
+        m_resizeGrips.append(new ResizeGrip(this, edges, cursor, QString::fromLatin1(name)));
+    };
+    add(Qt::TopEdge | Qt::LeftEdge, Qt::SizeFDiagCursor, "resize-top-left");
+    add(Qt::TopEdge, Qt::SizeVerCursor, "resize-top");
+    add(Qt::TopEdge | Qt::RightEdge, Qt::SizeBDiagCursor, "resize-top-right");
+    add(Qt::RightEdge, Qt::SizeHorCursor, "resize-right");
+    add(Qt::BottomEdge | Qt::RightEdge, Qt::SizeFDiagCursor, "resize-bottom-right");
+    add(Qt::BottomEdge, Qt::SizeVerCursor, "resize-bottom");
+    add(Qt::BottomEdge | Qt::LeftEdge, Qt::SizeBDiagCursor, "resize-bottom-left");
+    add(Qt::LeftEdge, Qt::SizeHorCursor, "resize-left");
+    updateResizeGrips();
+}
+
+void MainWindow::updateResizeGrips()
+{
+    if (m_resizeGrips.size() != 8)
+        return;
+    if (isFullScreen() || isMaximized()) {
+        for (QWidget *grip : m_resizeGrips)
+            grip->hide();
+        return;
+    }
+    const int w = width();
+    const int h = height();
+    const int corner = qMin(16, qMin(w, h) / 2);
+    const int edge = qMin(8, corner);
+    const QList<QRect> areas = {
+        QRect(0, 0, corner, corner),
+        QRect(corner, 0, w - 2 * corner, edge),
+        QRect(w - corner, 0, corner, corner),
+        QRect(w - edge, corner, edge, h - 2 * corner),
+        QRect(w - corner, h - corner, corner, corner),
+        QRect(corner, h - edge, w - 2 * corner, edge),
+        QRect(0, h - corner, corner, corner),
+        QRect(0, corner, edge, h - 2 * corner)
+    };
+    for (int i = 0; i < m_resizeGrips.size(); ++i) {
+        QWidget *grip = m_resizeGrips.at(i);
+        grip->setGeometry(areas.at(i));
+        grip->setVisible(!areas.at(i).isEmpty());
+        grip->raise();
+    }
 }
 
 void MainWindow::handleRemoteCommand(const QString &command)
@@ -1037,6 +1270,14 @@ void MainWindow::applyWindowOpacity()
     m_view->update();
     if (!QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
         return;
+    syncNiriWindowRule();
+}
+
+void MainWindow::syncNiriWindowRule()
+{
+    m_niriRuleReady = false;
+    if (qEnvironmentVariableIsEmpty("NIRI_SOCKET"))
+        return;
     const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation))
                             .filePath(QStringLiteral("niri"));
     const QString path = dir + QStringLiteral("/rules.kdl");
@@ -1047,16 +1288,21 @@ void MainWindow::applyWindowOpacity()
     f.close();
     QString patched = content;
     // niri 端固定 1.0，保证整窗不被淡出，文字始终不透明
-    if (!reader::patchReaderOpacity(&patched, 1.0))
+    const std::optional<QPoint> position = m_settings.hasNiriFloatingPosition
+        ? std::optional<QPoint>(m_settings.niriFloatingPosition) : std::nullopt;
+    if (!reader::patchReaderOpacity(&patched, 1.0, position))
         return;
-    if (patched == content)
+    if (patched == content) {
+        m_niriRuleReady = true;
         return;
+    }
     QSaveFile sf(path);
     if (!sf.open(QIODevice::WriteOnly))
         return;
     sf.write(patched.toUtf8());
     if (!sf.commit())
         return;
+    m_niriRuleReady = reloadNiriConfig();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

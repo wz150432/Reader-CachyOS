@@ -4,6 +4,7 @@ project(ReaderCachyOS VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Test Network)
 find_package(LibArchive REQUIRED)
@@ -37,6 +38,7 @@ add_library(reader_core STATIC
     src/core/Cache.cpp src/core/Cache.h
     src/core/Keyset.cpp src/core/Keyset.h
     src/core/NiriConfig.cpp src/core/NiriConfig.h
+    src/core/NiriWindow.cpp src/core/NiriWindow.h
 )
 target_include_directories(reader_core PUBLIC src)
 target_link_libraries(reader_core PUBLIC Qt6::Core Qt6::Gui LibArchive::LibArchive)
@@ -148,6 +150,7 @@ qt_add_executable(tst_mainwindow2
 )
 target_include_directories(tst_mainwindow2 PRIVATE src)
 target_link_libraries(tst_mainwindow2 PRIVATE reader_core Qt6::Test Qt6::Widgets Qt6::Network)
+add_dependencies(tst_mainwindow2 reader)
 add_test(NAME mainwindow2 COMMAND tst_mainwindow2)
 set_tests_properties(mainwindow2 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
@@ -196,10 +199,18 @@ target_link_libraries(tst_window PRIVATE reader_core Qt6::Test Qt6::Widgets Qt6:
 add_test(NAME window COMMAND tst_window)
 set_tests_properties(window PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+foreach(target reader tst_mainwindow tst_mainwindow2 tst_window)
+    target_sources(${target} PRIVATE src/app/reader_resources.qrc)
+endforeach()
+
 qt_add_executable(tst_niriconfig tests/tst_niriconfig.cpp)
 target_link_libraries(tst_niriconfig PRIVATE reader_core Qt6::Test)
 add_test(NAME niriconfig COMMAND tst_niriconfig)
 set_tests_properties(niriconfig PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_niriwindow tests/tst_niriwindow.cpp)
+target_link_libraries(tst_niriwindow PRIVATE reader_core Qt6::Test)
+add_test(NAME niriwindow COMMAND tst_niriwindow)
 
 qt_add_executable(tst_epubbook tests/tst_epubbook.cpp)
 target_link_libraries(tst_epubbook PRIVATE reader_core Qt6::Test Qt6::Widgets LibArchive::LibArchive)

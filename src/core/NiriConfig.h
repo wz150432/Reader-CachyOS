@@ -1,12 +1,15 @@
 #pragma once
 
 #include <QString>
+#include <QPoint>
+#include <optional>
 
 namespace reader {
 
 // 在 niri rules.kdl 文本中重建 Reader 的 window-rule 块，
 // 写入 opacity 值（0.0 ~ 1.0）。幂等：块存在则更新，不存在则追加。
-bool patchReaderOpacity(QString *content, double opacity);
+bool patchReaderOpacity(QString *content, double opacity,
+                        std::optional<QPoint> floatingPosition = std::nullopt);
 
 // 在 niri binds.kdl 中写入 Reader 的全局隐藏快捷键。
 bool patchReaderGlobalHide(QString *content, const QString &keySequence,

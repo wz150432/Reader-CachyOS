@@ -9,8 +9,11 @@
 #include <QToolBar>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QDialog>
+#include <QLabel>
 #include <QAbstractButton>
 #include <QPushButton>
+#include <QProcess>
 #include <QWidgetAction>
 #include <QTreeWidget>
 #include <QTimer>
@@ -38,7 +41,60 @@ private slots:
     void tocFillsReadingAreaAndToggles();
     void mouseLeaveHideHotkeyToggles();
     void editModeCtrlEToggles();
+    void aboutActionOpensProjectDialog();
+    void remoteShortcutDoesNotLaunchReaderWithoutInstance();
 };
+
+void TestMainWindow2::remoteShortcutDoesNotLaunchReaderWithoutInstance()
+{
+    QTemporaryDir runtimeDir;
+    QVERIFY(runtimeDir.isValid());
+    QProcess process;
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("XDG_RUNTIME_DIR"), runtimeDir.path());
+    environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+    process.setProcessEnvironment(environment);
+    process.start(QCoreApplication::applicationDirPath() + QStringLiteral("/reader"),
+                  {QStringLiteral("--toggle-hide")});
+    QVERIFY(process.waitForStarted());
+    const bool finished = process.waitForFinished(1500);
+    if (!finished) {
+        process.kill();
+        process.waitForFinished();
+    }
+    QVERIFY2(finished, "--toggle-hide must not launch a new Reader when no instance is running");
+    QCOMPARE(process.exitCode(), 1);
+}
+
+void TestMainWindow2::aboutActionOpensProjectDialog()
+{
+    MainWindow w;
+    QAction *about = nullptr;
+    for (QAction *action : w.menuBar()->actions()) {
+        if (action->text() == QStringLiteral("关于"))
+            about = action;
+        QVERIFY(action->text() != QStringLiteral("帮助"));
+    }
+    QVERIFY(about);
+    QVERIFY(!about->menu());
+
+    bool sawDialog = false;
+    QTimer::singleShot(0, &w, [&] {
+        auto *dialog = w.findChild<QDialog *>(QStringLiteral("aboutDialog"));
+        if (!dialog)
+            return;
+        auto *link = dialog->findChild<QLabel *>(QStringLiteral("projectLink"));
+        auto *icon = dialog->findChild<QLabel *>(QStringLiteral("aboutIcon"));
+        sawDialog = link && link->text().contains(QStringLiteral("https://github.com/wz150432/Reader-CachyOS"))
+            && icon && !icon->pixmap(Qt::ReturnByValue).isNull();
+        const QString screenshotPath = qEnvironmentVariable("READER_ABOUT_SCREENSHOT");
+        if (!screenshotPath.isEmpty())
+            dialog->grab().save(screenshotPath);
+        dialog->reject();
+    });
+    about->trigger();
+    QVERIFY(sawDialog);
+}
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
 {

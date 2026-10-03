@@ -4,6 +4,7 @@
 #include <QJsonArray>
 #include <QByteArray>
 #include <QJsonObject>
+#include <QPoint>
 #include <QString>
 #include <QVector>
 #include "core/Keyset.h"
@@ -57,6 +58,8 @@ public:
     QString chapterRegex;
     QByteArray windowGeometry;
     QByteArray windowState;
+    bool hasNiriFloatingPosition = false;
+    QPoint niriFloatingPosition;
     void load();
     void save() const;
     static QString defaultConfigFilePath();

@@ -30,6 +30,8 @@ private slots:
     void displayDialogAlphaMinimumFollowsMenu();
     void savedZeroAlphaClampedOnStartup();
     void tocHiddenByDefault();
+    void resizeGripsCoverWindowEdges();
+    void resizeGripsHideInFullscreen();
 };
 
 void TestWindow::hideAndShow()
@@ -210,6 +212,46 @@ void TestWindow::tocHiddenByDefault()
     auto *toc = w.findChild<QTreeWidget *>(QStringLiteral("tocView"));
     QVERIFY(toc);
     QVERIFY(!toc->isVisible());
+}
+
+void TestWindow::resizeGripsCoverWindowEdges()
+{
+    MainWindow w;
+    w.show();
+    w.resize(240, 180);
+    struct ExpectedGrip {
+        const char *name;
+        QRect area;
+        Qt::CursorShape cursor;
+    };
+    const ExpectedGrip expected[] = {
+        {"resize-top-left", QRect(0, 0, 16, 16), Qt::SizeFDiagCursor},
+        {"resize-top", QRect(16, 0, 208, 8), Qt::SizeVerCursor},
+        {"resize-top-right", QRect(224, 0, 16, 16), Qt::SizeBDiagCursor},
+        {"resize-right", QRect(232, 16, 8, 148), Qt::SizeHorCursor},
+        {"resize-bottom-right", QRect(224, 164, 16, 16), Qt::SizeFDiagCursor},
+        {"resize-bottom", QRect(16, 172, 208, 8), Qt::SizeVerCursor},
+        {"resize-bottom-left", QRect(0, 164, 16, 16), Qt::SizeBDiagCursor},
+        {"resize-left", QRect(0, 16, 8, 148), Qt::SizeHorCursor}
+    };
+    for (const ExpectedGrip &item : expected) {
+        auto *grip = w.findChild<QWidget *>(QString::fromLatin1(item.name));
+        QVERIFY2(grip, item.name);
+        QCOMPARE(grip->geometry(), item.area);
+        QCOMPARE(grip->cursor().shape(), item.cursor);
+        QVERIFY(grip->isVisible());
+    }
+}
+
+void TestWindow::resizeGripsHideInFullscreen()
+{
+    MainWindow w;
+    w.show();
+    auto *topLeft = w.findChild<QWidget *>(QStringLiteral("resize-top-left"));
+    QVERIFY(topLeft);
+    QVERIFY(topLeft->isVisible());
+    w.toggleFullscreen();
+    QVERIFY(!topLeft->isVisible());
 }
 
 int main(int argc, char *argv[])

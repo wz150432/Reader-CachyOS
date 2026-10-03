@@ -1,4 +1,8 @@
-# Reader CachyOS (Niri / Wayland)
+<<<<<<< HEAD
+# Reader CachyOS (Niri)
+=======
+# Reader CachyOS (Niri)
+>>>>>>> 2e86f78d0b8c41075878b4df7437eab914ac028e
 
 > 致敬 [binbyu/Reader](https://github.com/binbyu/Reader) -- 一款简洁好用的 Windows 桌面阅读器。
 > 本项目将其核心阅读体验移植到 Linux 原生环境，献给每一位在 CachyOS / Arch 上安静读书的人。

@@ -1191,7 +1191,7 @@ void MainWindow::syncGlobalHide()
     sf.write(patched.toUtf8());
     if (!sf.commit())
         return;
-    m_globalHideBindReady = true;
+    m_globalHideBindReady = reloadNiriConfig();
 }
 
 void MainWindow::toggleFullscreen()
@@ -1217,9 +1217,22 @@ void MainWindow::toggleAlwaysOnTop()
 
 void MainWindow::toggleHideBorder()
 {
-    // 隐藏/显示窗口顶部的菜单栏（文件/目录/书签/设置/窗口/帮助）
     if (menuBar()) {
-        menuBar()->setVisible(!menuBar()->isVisible());
+        const bool hideFrame = menuBar()->isVisible();
+        const bool wasVisible = isVisible();
+        const bool wasMaximized = isMaximized();
+        if (wasVisible)
+            rememberNiriFloatingPosition();
+        menuBar()->setVisible(!hideFrame);
+        setWindowFlag(Qt::FramelessWindowHint, hideFrame);
+        if (wasVisible) {
+            prepareNiriFloatingPositionRestore();
+            if (wasMaximized)
+                showMaximized();
+            else
+                show();
+            restoreNiriFloatingPosition();
+        }
         applyWindowOpacity();
     }
 }

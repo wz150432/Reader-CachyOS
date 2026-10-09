@@ -21,6 +21,8 @@ bool patchReaderOpacity(QString *content, double opacity,
     }
     newBlock += QStringLiteral("    opacity ") + opacityText + QLatin1Char('\n');
     newBlock += QStringLiteral("    shadow { off; }\n");
+    newBlock += QStringLiteral("    border { off; }\n");
+    newBlock += QStringLiteral("    focus-ring { off; }\n");
     newBlock += QStringLiteral("    draw-border-with-background false\n");
     newBlock += QLatin1Char('}');
 

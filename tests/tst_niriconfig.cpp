@@ -34,6 +34,8 @@ void TestNiriConfig::updatesExistingReaderBlock()
     QVERIFY(content.contains(QStringLiteral("match title=r\".* - Reader$\"")));
     QVERIFY(content.contains(QStringLiteral("shadow { off; }")));
     QVERIFY(content.contains(QStringLiteral("draw-border-with-background false")));
+    QVERIFY(content.contains(QStringLiteral("border { off; }")));
+    QVERIFY(content.contains(QStringLiteral("focus-ring { off; }")));
     // 幂等：再次调用仍只有一行 opacity
     QVERIFY(patchReaderOpacity(&content, 0.25));
     QCOMPARE(content.count(QStringLiteral("opacity 0.25")), 1);

@@ -76,8 +76,10 @@ void TestWindow::hideBorderToggle()
     w.show();
     w.toggleHideBorder();
     QVERIFY(!w.menuBar()->isVisible());
+    QVERIFY(w.windowFlags().testFlag(Qt::FramelessWindowHint));
     w.toggleHideBorder();
     QVERIFY(w.menuBar()->isVisible());
+    QVERIFY(!w.windowFlags().testFlag(Qt::FramelessWindowHint));
 }
 
 void TestWindow::autopageReflectsSettings()

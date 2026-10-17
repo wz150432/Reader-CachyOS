@@ -69,6 +69,12 @@ void NovelSourceClient::submit(QJsonObject r) {
     finish(j);
     return;
   }
+  if (j->op == "validate") {
+    auto error=HtmlRuleParser::validateRules(j->source);
+    j->result={{"valid",error.isEmpty()}};
+    finish(j,error);
+    return;
+  }
   if (j->op == "cancel") {
     cancel(r["target"].toString());
     finish(j);

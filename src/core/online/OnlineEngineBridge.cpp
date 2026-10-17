@@ -20,7 +20,6 @@ OnlineEngineBridge::OnlineEngineBridge(QObject *parent) : QObject(parent) {
 OnlineEngineBridge::~OnlineEngineBridge() {
   disconnect(&m_process, nullptr, this, nullptr);
   m_process.kill();
-  m_process.waitForFinished(1000);
 }
 void OnlineEngineBridge::setExecutablePath(const QString &path) {
   if (m_path == path)
@@ -60,7 +59,7 @@ QString OnlineEngineBridge::request(const QString &op,
   QTimer::singleShot(0, this, [this, id, op] {
     if (!m_pending.contains(id))
       return;
-    if (op != "search" && op != "toc" && op != "chapter") {
+    if (op != "search" && op != "toc" && op != "chapter" && op != "validate") {
       auto p = m_pending.take(id);
       p.timer->deleteLater();
       emit error(id, p.message["session"].toString(),

@@ -46,6 +46,15 @@ class EngineTest : public QObject {
             {"intervalMs", 500}};
   }
 private slots:
+  void validateRulesWithoutNetwork() {
+    auto valid = source();
+    auto good = call({{"op", "validate"}, {"source",valid}});
+    QVERIFY(good["ok"].toBool());
+    valid["contentNextXPath"]="//*[";
+    auto bad=call({{"op","validate"},{"source",valid}});
+    QVERIFY(!bad["ok"].toBool());
+    QVERIFY(bad["error"].toString().contains("contentNextXPath"));
+  }
   void initTestCase() {
     QVERIFY(server.listen(QHostAddress::LocalHost));
     base = "http://127.0.0.1:" + QString::number(server.serverPort());

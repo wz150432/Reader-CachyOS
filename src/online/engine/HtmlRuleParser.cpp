@@ -167,3 +167,19 @@ ParsedPage HtmlRuleParser::parse(const QByteArray &body, const QUrl &url,
   xmlFreeDoc(doc);
   return out;
 }
+
+QString HtmlRuleParser::validateRules(const QJsonObject &source) {
+  // Compile in a private context so diagnostics never print expressions or secrets.
+  auto ctx=xmlXPathNewContext(nullptr);
+  ctx->error=[](void *, const xmlError *) {};
+  QString error;
+  for (const auto &key : {"resultXPath", "titleXPath", "linkXPath", "authorXPath", "tocUrlXPath", "chapterXPath", "contentXPath", "removeXPath", "tocNextXPath", "contentNextXPath"}) {
+    auto value=source.value(key).toString();
+    if(value.isEmpty())continue;
+    auto compiled=xmlXPathCtxtCompile(ctx,reinterpret_cast<const xmlChar*>(value.toUtf8().constData()));
+    if(!compiled){error=QString("Invalid XPath: %1").arg(key);break;}
+    xmlXPathFreeCompExpr(compiled);
+  }
+  xmlXPathFreeContext(ctx);
+  return error;
+}

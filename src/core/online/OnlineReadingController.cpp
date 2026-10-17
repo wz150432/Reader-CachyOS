@@ -23,6 +23,9 @@ OnlineReadingController::OnlineReadingController(OnlineEngineBridge *bridge,
           m_cancelled = true;
           if (index == m_target)
             emit currentError(index, "Invalid chapter response");
+          else
+            emit backgroundStatus(
+                -1, qMin(3, int(m_book->chapters().size()) - m_target - 1));
           return;
         }
         if (index == m_target)
@@ -41,7 +44,8 @@ OnlineReadingController::OnlineReadingController(OnlineEngineBridge *bridge,
         if (i == m_target)
           emit currentError(i, error);
         else
-          emit backgroundStatus(-1, 3);
+          emit backgroundStatus(
+              -1, qMin(3, int(m_book->chapters().size()) - m_target - 1));
       });
 }
 void OnlineReadingController::setBook(std::shared_ptr<OnlineBook> book) {

@@ -42,6 +42,107 @@ private slots:
     QTest::qWait(50);
     QCOMPARE(results.size(), 1);
   }
+  void scrollAcrossCachedChapterKeepsObserversTransactional() {
+    QTemporaryDir d;
+    QJsonArray chapters;
+    for (int i = 0; i < 3; ++i)
+      chapters.append(
+          QJsonObject{{"title", QString::number(i)},
+                      {"url", QString("https://example.org/%1").arg(i)}});
+    auto b = OnlineBook::createManifest(d.path(), BookSource::preset(),
+                                        "https://example.org/book", "Book",
+                                        chapters);
+    QVERIFY(b);
+    QVERIFY(b->saveChapter(0, "first"));
+    QVERIFY(b->saveChapter(1, "second"));
+    ReadingView view;
+    view.resize(400, 200);
+    view.setBook(b);
+    QSignalSpy chapterSignals(&view, &ReadingView::chapterChanged);
+    QSignalSpy pageSignals(&view, &ReadingView::pageChanged);
+    QList<QList<int>> requestStates;
+    connect(&view, &ReadingView::chapterRequested, this, [&](int target) {
+      requestStates.append({target, view.currentChapter(), view.currentPage(),
+                            view.pendingChapter()});
+    });
+    QVERIFY(!view.scrollByPixels(1000000));
+    QCOMPARE(view.currentChapter(), 0);
+    QCOMPARE(view.currentPage(), 0);
+    QCOMPARE(view.pendingChapter(), 2);
+    QVERIFY(chapterSignals.isEmpty());
+    QVERIFY(pageSignals.isEmpty());
+    QCOMPARE(requestStates, (QList<QList<int>>{{2, 0, 0, 2}}));
+    QVERIFY(b->saveChapter(2, "third"));
+    view.setChapterReady(2);
+    QCOMPARE(chapterSignals.size(), 1);
+    QCOMPARE(chapterSignals[0][0].toInt(), 2);
+    QCOMPARE(view.currentChapter(), 2);
+    view.goToChapter(0);
+    chapterSignals.clear();
+    pageSignals.clear();
+    QList<QList<int>> commits;
+    connect(&view, &ReadingView::chapterChanged, this, [&](int index) {
+      commits.append({index, view.currentChapter(), view.currentPage(),
+                      view.pendingChapter()});
+    });
+    QVERIFY(view.scrollByPixels(1000000));
+    QCOMPARE(commits, (QList<QList<int>>{{2, 2, 0, -1}}));
+    QCOMPARE(chapterSignals.size(), 1);
+  }
+  void pageUpFromPendingLandsOnCachedLastPage() {
+    QTemporaryDir d;
+    auto b = OnlineBook::createManifest(
+        d.path(), BookSource::preset(), "https://example.org/book", "Book",
+        QJsonArray{
+            QJsonObject{{"title", "One"}, {"url", "https://example.org/1"}},
+            QJsonObject{{"title", "Two"}, {"url", "https://example.org/2"}}});
+    QVERIFY(b);
+    QVERIFY(b->saveChapter(0, QString("long text\n\n").repeated(100)));
+    ReadingView view;
+    view.resize(400, 200);
+    view.setBook(b);
+    QVERIFY(view.pageCount() > 1);
+    const int lastPage = view.pageCount() - 1;
+    view.goToChapter(1);
+    QList<QList<int>> commits;
+    connect(&view, &ReadingView::chapterChanged, this, [&](int index) {
+      commits.append({index, view.currentChapter(), view.currentPage(),
+                      view.pendingChapter()});
+    });
+    QSignalSpy pages(&view, &ReadingView::pageChanged);
+    view.pageUp();
+    QCOMPARE(view.currentPage(), lastPage);
+    QCOMPARE(view.pendingChapter(), -1);
+    QCOMPARE(commits, (QList<QList<int>>{{0, 0, lastPage, -1}}));
+    QCOMPARE(pages.size(), 1);
+    QCOMPARE(pages[0][0].toInt(), lastPage);
+  }
+  void malformedBackgroundChapterReportsFailure() {
+    QTemporaryDir d;
+    auto b = OnlineBook::createManifest(
+        d.path(), BookSource::preset(), "https://example.org/book", "Book",
+        QJsonArray{
+            QJsonObject{{"title", "One"}, {"url", "https://example.org/1"}},
+            QJsonObject{{"title", "Two"},
+                        {"url", "https://example.org/invalid-body"}}});
+    QVERIFY(b);
+    QVERIFY(b->saveChapter(0, "cached"));
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() +
+                             "/online_fixture");
+    OnlineReadingController controller(&bridge);
+    QSignalSpy background(&controller,
+                          &OnlineReadingController::backgroundStatus);
+    QSignalSpy foregroundErrors(&controller,
+                                &OnlineReadingController::currentError);
+    controller.setBook(b);
+    controller.requestChapter(0);
+    QTRY_COMPARE_WITH_TIMEOUT(background.size(), 1, 1000);
+    QCOMPARE(background[0][0].toInt(), -1);
+    QCOMPARE(background[0][1].toInt(), 1);
+    QVERIFY(foregroundErrors.isEmpty());
+    QVERIFY(!b->chapterAvailable(1));
+  }
   void pixelBoundaryDoesNotCommitPartialScroll() {
     QTemporaryDir d;
     auto b = OnlineBook::createManifest(

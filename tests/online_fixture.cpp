@@ -36,6 +36,8 @@ int main(int argc, char **argv) {
       result = {{"title", "Chapter"}, {"url", j["url"]}, {"text", "Body"}};
     if (j.value("url").toString().contains("/redirect"))
       result["url"] = "https://example.org/final";
+    if (j.value("url").toString().contains("/invalid-body"))
+      result["text"] = 42;
     QJsonObject out{{"protocol", 1},
                     {"id", j["id"]},
                     {"session", j["session"]},

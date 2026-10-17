@@ -13,16 +13,19 @@ OnlineEngineBridge::OnlineEngineBridge(QObject *parent) : QObject(parent) {
           [this] { m_process.readAllStandardError(); });
   connect(
       &m_process, &QProcess::errorOccurred, this,
-      [this](QProcess::ProcessError) {
-        if (!m_stopping)
-          failAll("Online engine unavailable");
+      [this](QProcess::ProcessError error) {
+        if (m_stopping) {
+          // FailedToStart has no subsequent finished signal.
+          if (error == QProcess::FailedToStart)
+            finishStopping();
+          return;
+        }
+        failAll("Online engine unavailable");
       });
   connect(&m_process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
           this, [this](int, QProcess::ExitStatus) {
             if (m_stopping) {
-              m_stopping = false;
-              if (!m_pending.isEmpty())
-                start();
+              finishStopping();
             } else {
               failAll("Online engine stopped");
             }
@@ -216,6 +219,14 @@ void OnlineEngineBridge::failAll(const QString &message) {
     it->timer->deleteLater();
     emit error(it.key(), it->message["session"].toString(), message);
   }
+}
+void OnlineEngineBridge::finishStopping() {
+  m_stopping = false;
+  if (!m_pending.isEmpty())
+    QTimer::singleShot(0, this, [this] {
+      if (!m_pending.isEmpty())
+        start();
+    });
 }
 void OnlineEngineBridge::stop() { failAll("Online request cancelled"); }
 } // namespace reader

@@ -33,6 +33,7 @@ private:
   void flush();
   void receive();
   void failAll(const QString &message);
+  void finishStopping();
   void send(const QJsonObject &);
   QProcess m_process;
   QString m_path;

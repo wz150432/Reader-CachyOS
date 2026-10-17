@@ -25,6 +25,29 @@ private slots:
     QCOMPARE(errors[0][1].toString(), QString("session"));
     QVERIFY(results.isEmpty());
   }
+  void bridgeFailedStartThenImmediateRestart() {
+    OnlineEngineBridge bridge;
+    bridge.setTimeoutMs(1000);
+    bridge.setExecutablePath("/missing/reader-online");
+    QSignalSpy results(&bridge, &OnlineEngineBridge::result);
+    QSignalSpy errors(&bridge, &OnlineEngineBridge::error);
+    auto old = bridge.request("chapter", {}, "old");
+    QString replacement;
+    QTimer::singleShot(0, &bridge, [&] {
+      bridge.stop();
+      bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+      replacement = bridge.request("chapter", {{"url", "https://example.org/new"}}, "new");
+    });
+    QTRY_COMPARE_WITH_TIMEOUT(results.size(), 1, 2000);
+    QCOMPARE(results[0][0].toString(), replacement);
+    QCOMPARE(results[0][1].toString(), QString("new"));
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(errors[0][0].toString(), old);
+    bridge.setExecutablePath({});
+    auto teardown = bridge.request("validate", {}, "teardown");
+    QTRY_COMPARE(errors.size(), 2);
+    QCOMPARE(errors.last()[0].toString(), teardown);
+  }
   void bridgeImmediateRestartPreservesNewRequest() {
     OnlineEngineBridge bridge;
     bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
@@ -40,6 +63,10 @@ private slots:
       QCOMPARE(results.last()[1].toString(), QString("new-session"));
       QVERIFY(errors.isEmpty());
     }
+    bridge.setExecutablePath({});
+    auto teardown = bridge.request("validate", {}, "teardown");
+    QTRY_COMPARE(errors.size(), 1);
+    QCOMPARE(errors.last()[0].toString(), teardown);
   }
   void bridgeMissingRetryAndCancel() {
     OnlineEngineBridge bridge;

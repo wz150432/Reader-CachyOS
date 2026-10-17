@@ -112,7 +112,11 @@ private slots:
       QVERIFY(manager.setEnabled(true));
       bridge.setExecutablePath(manager.executablePath());
     }
-    bridge.stop();
+    bridge.setExecutablePath({});
+    QSignalSpy teardownErrors(&bridge, &OnlineEngineBridge::error);
+    auto teardown = bridge.request("validate", {}, "teardown");
+    QTRY_COMPARE(teardownErrors.size(), 1);
+    QCOMPARE(teardownErrors[0][0].toString(), teardown);
     QVERIFY(manager.uninstall());
   }
 };

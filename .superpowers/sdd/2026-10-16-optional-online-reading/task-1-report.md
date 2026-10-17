@@ -35,3 +35,125 @@ MediaWiki link classification is heuristic: parent-title-prefixed links with Chi
 Only task-owned new files are staged/committed. All pre-existing dirty application, packaging, README and CMakeLists.txt changes remain outside the commit.
 
 Final verification after all fixes: full `cmake --build build-online-engine -j3` succeeded; focused CTest passed in 8.27 seconds. Final live smoke again succeeded for both works: 红楼梦 120 chapters / 8,253 characters and 三国演义 120 chapters / 4,800 characters (decorated previous/next navigation removed). Final smoke log: `/tmp/reader-task1-live-final.log`; build log: `/tmp/reader-task1-build.log` (temporary evidence, not shipped artifacts).
+
+## Review fix round 1 — redirect methods and complete envelope
+
+Verified both Important findings against current code: redirects only POSTed when redirect count was zero; session was neither validated by submit nor by the quit fast path. Added tests before changing production code.
+
+Local TCP regressions send actual form POSTs through 301/302/303/307/308 redirects. They assert final method and unchanged `keyword=test&page=2` for 307/308, and GET without body for 301/302/303. Twelve process regressions cover missing/numeric/object session on hello/chapter/cancel/quit, assert rejection and no HTTP request. Existing cancellation fixture now supplies the required session.
+
+Implementation carries method state across redirects and retries; 307/308 preserve POST/body and 301/302/303 convert POST to GET. The same complete-envelope validator gates submit and the quit fast path: numeric protocol exactly 1, nonempty string ID, string session. Invalid requests cannot remove an active job sharing their ID. Existing origin checks for headers/cookies are unchanged and their regression still passes. Self-review confirmed pagination starts fresh GET requests and retry preserves the current redirected method.
+
+RED command (exit 14):
+```sh
+cmake --build build-online-engine --target tst_onlineengine -j3 > /tmp/reader-task1-round1-build-red.log 2>&1 && build-online-engine/tst_onlineengine postRedirects envelope > /tmp/reader-task1-round1-red.log 2>&1
+```
+Exact RED test output:
+```text
+********* Start testing of EngineTest *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), cachyos unknown
+PASS   : EngineTest::initTestCase()
+PASS   : EngineTest::postRedirects(301)
+PASS   : EngineTest::postRedirects(302)
+PASS   : EngineTest::postRedirects(303)
+FAIL!  : EngineTest::postRedirects(307) 'lastRequest.startsWith("POST /search ")' returned FALSE. (GET /search HTTP/1.1?
+Host: 127.0.0.1:38053?
+User-Agent: ReaderCachyOS/0.1 (https://github.com/wz150432/Reader-CachyOS)?
+Connection: Keep-Alive?
+Accept-Encoding: zstd, br, gzip, deflate?
+Accept-Language: en,*?
+?
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(171)]
+FAIL!  : EngineTest::postRedirects(308) 'lastRequest.startsWith("POST /search ")' returned FALSE. (GET /search HTTP/1.1?
+Host: 127.0.0.1:38053?
+User-Agent: ReaderCachyOS/0.1 (https://github.com/wz150432/Reader-CachyOS)?
+Connection: Keep-Alive?
+Accept-Encoding: zstd, br, gzip, deflate?
+Accept-Language: en,*?
+?
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(171)]
+FAIL!  : EngineTest::envelope(hello-missing) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{"protocol":1,"version":"0.1.0"},"session":""}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(hello-number) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{"protocol":1,"version":"0.1.0"},"session":""}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(hello-object) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{"protocol":1,"version":"0.1.0"},"session":""}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(chapter-missing) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{"text":"甲&乙\n\n丙\n丁","title":"","url":"http://127.0.0.1:38053/c1"},"session":""}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(chapter-number) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{"text":"甲&乙\n\n丙\n丁","title":"","url":"http://127.0.0.1:38053/c1"},"session":""}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(chapter-object) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{"text":"甲&乙\n\n丙\n丁","title":"","url":"http://127.0.0.1:38053/c1"},"session":""}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(cancel-missing) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{},"session":""}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(cancel-number) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{},"session":""}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(cancel-object) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{},"session":""}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(quit-missing) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{},"session":null}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(quit-number) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{},"session":7}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+FAIL!  : EngineTest::envelope(quit-object) 'rejected' returned FALSE. ({"id":"bad","ok":true,"protocol":1,"result":{},"session":{}}
+)
+   Loc: [/home/wz150432/Documents/GitHub/Reader-CachyOS/tests/tst_onlineengine.cpp(211)]
+PASS   : EngineTest::cleanupTestCase()
+Totals: 5 passed, 14 failed, 0 skipped, 0 blacklisted, 4918ms
+********* Finished testing of EngineTest *********
+```
+
+GREEN command (exit 0):
+```sh
+cmake --build build-online-engine --target tst_onlineengine -j3 > /tmp/reader-task1-round1-build-green.log 2>&1 && build-online-engine/tst_onlineengine postRedirects envelope > /tmp/reader-task1-round1-green.log 2>&1 && ctest --test-dir build-online-engine -R '^onlineengine$' --output-on-failure
+```
+Exact targeted GREEN output:
+```text
+********* Start testing of EngineTest *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), cachyos unknown
+PASS   : EngineTest::initTestCase()
+PASS   : EngineTest::postRedirects(301)
+PASS   : EngineTest::postRedirects(302)
+PASS   : EngineTest::postRedirects(303)
+PASS   : EngineTest::postRedirects(307)
+PASS   : EngineTest::postRedirects(308)
+PASS   : EngineTest::envelope(hello-missing)
+PASS   : EngineTest::envelope(hello-number)
+PASS   : EngineTest::envelope(hello-object)
+PASS   : EngineTest::envelope(chapter-missing)
+PASS   : EngineTest::envelope(chapter-number)
+PASS   : EngineTest::envelope(chapter-object)
+PASS   : EngineTest::envelope(cancel-missing)
+PASS   : EngineTest::envelope(cancel-number)
+PASS   : EngineTest::envelope(cancel-object)
+PASS   : EngineTest::envelope(quit-missing)
+PASS   : EngineTest::envelope(quit-number)
+PASS   : EngineTest::envelope(quit-object)
+PASS   : EngineTest::cleanupTestCase()
+Totals: 19 passed, 0 failed, 0 skipped, 0 blacklisted, 4897ms
+********* Finished testing of EngineTest *********
+```
+Exact final focused CTest output:
+```text
+Test project /home/wz150432/Documents/GitHub/Reader-CachyOS/build-online-engine
+    Start 26: onlineengine
+1/1 Test #26: onlineengine .....................   Passed   13.25 sec
+
+100% tests passed out of 1
+
+Total Test time (real) =  13.25 sec
+```
+
+The two Important findings are fixed. Previously documented classification/navigation and portability limits remain. No live smoke was repeated for this protocol/redirect-only review round.

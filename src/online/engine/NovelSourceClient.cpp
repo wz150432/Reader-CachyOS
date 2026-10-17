@@ -42,19 +42,26 @@ void NovelSourceClient::finish(std::shared_ptr<Job> j, QString error) {
     r["error"] = error;
   emit completed(r);
 }
+bool NovelSourceClient::validEnvelope(const QJsonObject &r) {
+  return r["protocol"].isDouble() && r["protocol"].toDouble() == 1 &&
+         r["id"].isString() && !r["id"].toString().isEmpty() &&
+         r["session"].isString();
+}
 void NovelSourceClient::submit(QJsonObject r) {
   auto j = std::make_shared<Job>();
   j->request = r;
   j->source = r["source"].toObject();
   j->id = r["id"].toString();
   j->op = r["op"].toString();
+  if (!validEnvelope(r)) {
+    // An invalid envelope must not remove an existing job with the same ID.
+    j->id = "";
+    finish(j, "Malformed protocol");
+    return;
+  }
   if (jobs.contains(j->id)) {
     j->id = "";
     finish(j, "Duplicate request ID");
-    return;
-  }
-  if (r["protocol"].toInt() != 1 || j->id.isEmpty()) {
-    finish(j, "Malformed protocol");
     return;
   }
   if (j->op == "hello") {
@@ -113,10 +120,11 @@ void NovelSourceClient::submit(QJsonObject r) {
     s.replace("{page}", QString::number(r["page"].toInt(1)));
     u = QUrl(s);
   }
-  fetch(j, u);
+  fetch(j, u, 0, 0, j->op == "search" && j->source["kind"] == "html" &&
+                          j->source["searchMethod"] == "POST");
 }
 void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
-                              int retries) {
+                              int retries, bool post) {
   if (j->cancelled)
     return;
   if (!u.isValid() || !QStringList{"https", "http"}.contains(u.scheme()) ||
@@ -143,7 +151,7 @@ void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
   qint64 now = QDateTime::currentMSecsSinceEpoch(),
          when = qMax(now, last.value(j->key));
   last[j->key] = when + interval;
-  QTimer::singleShot(int(when - now), this, [this, j, u, redirects, retries] {
+  QTimer::singleShot(int(when - now), this, [this, j, u, redirects, retries, post] {
     if (j->cancelled)
       return;
     QNetworkRequest req(u);
@@ -170,8 +178,7 @@ void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
         req.setRawHeader("Cookie", j->source["cookie"].toString().toUtf8());
     }
     QNetworkReply *r;
-    if (j->op == "search" && j->source["searchMethod"] == "POST" &&
-        redirects == 0) {
+    if (post) {
       QString body = j->source["searchBody"].toString();
       body.replace("{keyword}", QString::fromLatin1(QUrl::toPercentEncoding(
                                     j->request["keyword"].toString())));
@@ -200,7 +207,7 @@ void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
     deadline->start(20000);
     connect(
         r, &QNetworkReply::finished, this,
-        [this, j, r, data, tooBig, u, redirects, retries] {
+        [this, j, r, data, tooBig, u, redirects, retries, post] {
           *data += r->readAll();
           r->deleteLater();
           if (j->cancelled)
@@ -219,7 +226,8 @@ void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
               finish(j, "Unsafe redirect");
               return;
             }
-            fetch(j, next, redirects + 1, retries);
+            fetch(j, next, redirects + 1, retries,
+                  post && status != 301 && status != 302 && status != 303);
             return;
           }
           if (status == 429 || status == 502 || status == 503 ||
@@ -227,7 +235,7 @@ void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
               (!status && r->error() != QNetworkReply::NoError &&
                !r->property("deadline").toBool())) {
             if (retries < 2) {
-              fetch(j, u, redirects, retries + 1);
+              fetch(j, u, redirects, retries + 1, post);
               return;
             }
           }

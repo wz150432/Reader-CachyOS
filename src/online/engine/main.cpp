@@ -51,8 +51,7 @@ int main(int argc, char **argv) {
           continue;
         }
         auto r = d.object();
-        if (r["op"] == "quit" && r["protocol"].toInt() == 1 &&
-            !r["id"].toString().isEmpty()) {
+        if (r["op"] == "quit" && NovelSourceClient::validEnvelope(r)) {
           send({{"protocol", 1},
                 {"id", r["id"]},
                 {"session", r["session"]},

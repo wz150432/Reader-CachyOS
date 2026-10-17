@@ -59,7 +59,13 @@ private slots:
           QByteArray charset = "utf-8";
           QByteArray body;
           int status = 200;
-          if (path == "/redirect") {
+          if (path.startsWith("/post-redirect/")) {
+            auto code = path.mid(QByteArray("/post-redirect/").size());
+            s->write("HTTP/1.1 " + code + " Redirect\r\nLocation: /search\r\n"
+                     "Content-Length: 0\r\nConnection: close\r\n\r\n");
+            s->disconnectFromHost();
+            return;
+          } else if (path == "/redirect") {
             s->write("HTTP/1.1 302 Found\r\nLocation: http://localhost:" +
                      QByteArray::number(server.serverPort()) +
                      "/c1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
@@ -148,6 +154,63 @@ private slots:
     QVERIFY(r["result"].toObject()["url"].toString().contains("localhost"));
     QVERIFY(!lastRequest.contains("private"));
   }
+  void postRedirects_data() {
+    QTest::addColumn<int>("status");
+    for (int code : {301, 302, 303, 307, 308})
+      QTest::newRow(qPrintable(QString::number(code))) << code;
+  }
+  void postRedirects() {
+    QFETCH(int, status);
+    auto s = source();
+    s["searchUrl"] = base + "/post-redirect/" + QString::number(status);
+    s["searchMethod"] = "POST";
+    s["searchBody"] = "keyword={keyword}&page={page}";
+    auto r = call({{"op", "search"}, {"source", s}, {"keyword", "test"}, {"page", 2}});
+    QVERIFY(r["ok"].toBool());
+    if (status == 307 || status == 308) {
+      QVERIFY2(lastRequest.startsWith("POST /search "), lastRequest.constData());
+      QVERIFY(lastRequest.endsWith("keyword=test&page=2"));
+    } else {
+      QVERIFY(lastRequest.startsWith("GET /search "));
+      QVERIFY(!lastRequest.contains("keyword=test"));
+    }
+  }
+  void envelope_data() {
+    QTest::addColumn<QString>("op");
+    QTest::addColumn<QJsonValue>("session");
+    for (const auto &op : {"hello", "chapter", "cancel", "quit"}) {
+      QTest::newRow(qPrintable(QString(op) + "-missing")) << QString(op) << QJsonValue(QJsonValue::Undefined);
+      QTest::newRow(qPrintable(QString(op) + "-number")) << QString(op) << QJsonValue(7);
+      QTest::newRow(qPrintable(QString(op) + "-object")) << QString(op) << QJsonValue(QJsonObject());
+    }
+  }
+  void envelope() {
+    QFETCH(QString, op);
+    QFETCH(QJsonValue, session);
+    QProcess engine;
+    engine.start(ENGINE_PATH);
+    QVERIFY(engine.waitForStarted());
+    QJsonObject request{{"protocol", 1}, {"id", "bad"}, {"op", op},
+                        {"source", source()}, {"url", base + "/c1"}, {"target", "pending"}};
+    if (!session.isUndefined())
+      request["session"] = session;
+    lastRequest.clear();
+    engine.write(QJsonDocument(request).toJson(QJsonDocument::Compact) + "\n");
+    QByteArray reply;
+    QElapsedTimer timer;
+    timer.start();
+    while (!reply.contains('\n') && timer.elapsed() < 3000) {
+      QCoreApplication::processEvents();
+      reply += engine.readAllStandardOutput();
+      QTest::qWait(2);
+    }
+    auto response = QJsonDocument::fromJson(reply).object();
+    bool rejected = response.contains("ok") && !response["ok"].toBool();
+    engine.closeWriteChannel();
+    engine.waitForFinished(3000);
+    QVERIFY2(rejected, reply.constData());
+    QVERIFY(lastRequest.isEmpty());
+  }
   void search() {
     auto r = call({{"op", "search"}, {"source", source()}, {"keyword", "x"}});
     QVERIFY2(r["ok"].toBool(), qPrintable(r["error"].toString()));
@@ -224,6 +287,7 @@ private slots:
   void cancellation() {
     QJsonObject o{{"protocol", 1},
                   {"id", "pending"},
+                  {"session", "s"},
                   {"op", "chapter"},
                   {"source", source()},
                   {"url", base + "/slow"}};

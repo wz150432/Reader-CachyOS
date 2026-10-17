@@ -29,7 +29,8 @@ int main(int argc, char **argv) {
       std::cout << std::string(16 * 1024 * 1024 + 1, 'x') << std::endl;
       continue;
     }
-    if (op == "chapter" && j.value("url").toString().contains("/slow/"))
+    if ((op == "chapter" || op == "toc") &&
+        j.value("url").toString().contains("/slow/"))
       QThread::msleep(100);
     QJsonObject result;
     if (op == "hello") {
@@ -81,6 +82,16 @@ int main(int argc, char **argv) {
                     {"session", j["session"]},
                     {"ok", true},
                     {"result", result}};
+    if (op == "validate" &&
+        j["source"].toObject()["id"].toString().startsWith("validate-")) {
+      auto mode = j["source"].toObject()["id"].toString();
+      out["ok"] = false;
+      out.remove("result");
+      out["error"] = mode == "validate-safe" ? "Invalid XPath: contentXPath"
+                     : mode == "validate-secret"
+                         ? "Invalid XPath: contentXPath Cookie=private-secret"
+                         : "Invalid XPath: unknownXPath";
+    }
     auto bytes = QJsonDocument(out).toJson(QJsonDocument::Compact);
     std::cout << bytes.constData() << std::endl;
   }

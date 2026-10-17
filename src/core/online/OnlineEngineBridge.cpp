@@ -157,8 +157,22 @@ void OnlineEngineBridge::receive() {
     p.timer->deleteLater();
     if (j["ok"].toBool())
       emit result(id, j["session"].toString(), j["result"].toObject());
-    else
-      emit error(id, j["session"].toString(), "Online request failed");
+    else {
+      QString message = "Online request failed";
+      if (p.message["op"] == "validate") {
+        const auto raw = j["error"].toString();
+        for (const auto key :
+             {"resultXPath", "titleXPath", "linkXPath", "authorXPath",
+              "tocUrlXPath", "chapterXPath", "contentXPath", "removeXPath",
+              "tocNextXPath", "contentNextXPath"}) {
+          if (raw == "Invalid XPath: " + QString::fromLatin1(key)) {
+            message = raw;
+            break;
+          }
+        }
+      }
+      emit error(id, j["session"].toString(), message);
+    }
   }
 }
 void OnlineEngineBridge::cancel(const QString &id) {

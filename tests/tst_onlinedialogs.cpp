@@ -7,6 +7,7 @@
 #include "core/online/OnlineEngineBridge.h"
 #include <QComboBox>
 #include <QDir>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -20,6 +21,137 @@ class DialogTest : public QObject {
   Q_OBJECT
 
 private slots:
+  void newSourceDoesNotCopyHiddenCredentials() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.path() + "/sources.json");
+    QVERIFY(store.load());
+    OnlineEngineBridge bridge;
+    BookSourceDialog d(&store, &bridge);
+    d.show();
+    d.findChild<QPushButton *>("copySource")->click();
+    d.findChild<QLineEdit *>("cookie")->setText("private-cookie");
+    d.findChild<QLineEdit *>("contentXPath")->setText("//private-rule");
+    d.findChild<QPlainTextEdit *>("headers")->setPlainText(
+        "{\"Authorization\":\"private-token\"}");
+    QPushButton *add = nullptr;
+    for (auto button : d.findChildren<QPushButton *>())
+      if (button->text() == QStringLiteral("新建"))
+        add = button;
+    QVERIFY(add);
+    add->click();
+    QVERIFY(d.findChild<QLineEdit *>("cookie")->text().isEmpty());
+    QVERIFY(d.findChild<QLineEdit *>("contentXPath")->text().isEmpty());
+    QCOMPARE(
+        QJsonDocument::fromJson(
+            d.findChild<QPlainTextEdit *>("headers")->toPlainText().toUtf8())
+            .object(),
+        QJsonObject{});
+  }
+  void failedTocCannotActivatePreviousRows() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.path() + "/sources.json");
+    store.load();
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() +
+                             "/online_fixture");
+    OnlineLibraryDialog d(&store, &bridge, dir.path() + "/books");
+    QSignalSpy opened(&d, &OnlineLibraryDialog::openRequested);
+    d.show();
+    auto direct = d.findChild<QLineEdit *>("directUrl");
+    direct->setText("https://example.org/book");
+    d.findChild<QPushButton *>("importUrl")->click();
+    auto rows = d.findChild<QListWidget *>("onlineToc");
+    QTRY_COMPARE(rows->count(), 2);
+    bridge.setExecutablePath({});
+    direct->setText("https://example.org/another-book");
+    d.findChild<QPushButton *>("importUrl")->click();
+    QVERIFY(!d.findChild<QPushButton *>("openOnlineBook")->isEnabled());
+    rows->setFocus();
+    QTest::keyClick(rows, Qt::Key_Return);
+    QCOMPARE(opened.size(), 0);
+  }
+  void pendingAndCancelledTocCannotActivatePreviousRows() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.path() + "/sources.json");
+    store.load();
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() +
+                             "/online_fixture");
+    OnlineLibraryDialog d(&store, &bridge, dir.path() + "/books");
+    QSignalSpy opened(&d, &OnlineLibraryDialog::openRequested);
+    d.show();
+    auto direct = d.findChild<QLineEdit *>("directUrl");
+    direct->setText("https://example.org/book");
+    d.findChild<QPushButton *>("importUrl")->click();
+    auto rows = d.findChild<QListWidget *>("onlineToc");
+    QTRY_COMPARE(rows->count(), 2);
+    direct->setText("https://example.org/slow/book-b");
+    d.findChild<QPushButton *>("importUrl")->click();
+    rows->setFocus();
+    QTest::keyClick(rows, Qt::Key_Return);
+    QCOMPARE(opened.size(), 0);
+    QPushButton *cancel = nullptr;
+    for (auto button : d.findChildren<QPushButton *>())
+      if (button->text() == QStringLiteral("取消请求"))
+        cancel = button;
+    QVERIFY(cancel);
+    cancel->click();
+    QTest::keyClick(rows, Qt::Key_Return);
+    QCOMPARE(opened.size(), 0);
+    QCOMPARE(rows->count(), 0);
+  }
+  void refreshKeepsRemovedBookmarkIdentity() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.path() + "/sources.json");
+    store.load();
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() +
+                             "/online_fixture");
+    auto book = OnlineBook::createManifest(
+        dir.path() + "/books", BookSource::preset(), "https://example.org/lost",
+        "Original",
+        QJsonArray{QJsonObject{{"title", "One"},
+                               {"url", "https://example.org/chapter-1"}},
+                   QJsonObject{{"title", "Two"},
+                               {"url", "https://example.org/chapter-2"}}});
+    QVERIFY(book);
+    Cache cache;
+    cache.load();
+    cache.upsertProgress({book->filePath(), 1, 3, 123, 12.5});
+    cache.addBookmark({book->filePath(), 0, 2, "saved first", 456});
+    cache.save();
+    OnlineLibraryDialog d(&store, &bridge, dir.path() + "/books");
+    QSignalSpy refreshed(&d, &OnlineLibraryDialog::tocRefreshed);
+    d.show();
+    d.findChild<QListWidget *>("cachedBooks")->setCurrentRow(0);
+    d.findChild<QPushButton *>("refreshOnlineToc")->click();
+    auto status = d.findChild<QLabel *>("libraryStatus");
+    QTRY_VERIFY(!status->text().contains("正在获取目录"));
+    QCOMPARE(refreshed.size(), 0);
+    auto preserved = Book::create(book->filePath());
+    QVERIFY(preserved);
+    QCOMPARE(preserved->chapters().size(), 2);
+    cache.load();
+    QCOMPARE(cache.bookmarks(book->filePath())[0].chapterIndex, 0);
+    QCOMPARE(cache.progress(book->filePath())->chapterIndex, 1);
+  }
+  void validationFeedbackOnlyAllowsKnownFieldNames() {
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() +
+                             "/online_fixture");
+    QSignalSpy errors(&bridge, &OnlineEngineBridge::error);
+    bridge.request("validate",
+                   {{"source", QJsonObject{{"id", "validate-safe"}}}}, "form");
+    QTRY_COMPARE(errors.size(), 1);
+    QCOMPARE(errors[0][2].toString(), QString("Invalid XPath: contentXPath"));
+    for (auto id : {"validate-secret", "validate-unknown"}) {
+      bridge.request("validate", {{"source", QJsonObject{{"id", id}}}}, "form");
+      QTRY_COMPARE(errors.size(), 2);
+      QCOMPARE(errors[1][2].toString(), QString("Online request failed"));
+      errors.removeLast();
+    }
+  }
+
   void captureActualWidgets() {
     QString output = qEnvironmentVariable("READER_ONLINE_SCREENSHOTS");
     if (output.isEmpty())

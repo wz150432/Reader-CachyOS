@@ -11,6 +11,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
+#include <QSet>
 #include <QSplitter>
 #include <QUrl>
 #include <QUuid>
@@ -279,6 +280,13 @@ void OnlineLibraryDialog::search(int page) {
                      {"page", page}});
 }
 void OnlineLibraryDialog::toc(const QString &url) {
+  stop();
+  m_open->setEnabled(false);
+  m_toc->clear();
+  m_chapters = {};
+  m_choices = false;
+  m_title.clear();
+  m_url.clear();
   QUrl u(url);
   if (!u.isValid() || u.host().isEmpty() ||
       (u.scheme() != "https" && u.scheme() != "http") ||
@@ -357,11 +365,29 @@ void OnlineLibraryDialog::receive(const QJsonObject &r) {
         return;
       }
     }
+    QSet<QString> refreshedUrls;
+    for (auto row : m_chapters) {
+      QUrl u(row.toObject()["url"].toString());
+      u.setFragment({});
+      refreshedUrls.insert(
+          u.adjusted(QUrl::NormalizePathSegments).toString(QUrl::FullyEncoded));
+    }
+    for (const auto &bookmark : cache.bookmarks(m_cachedBook->filePath())) {
+      if (bookmark.chapterIndex < 0 ||
+          bookmark.chapterIndex >= oldUrls.size() ||
+          !refreshedUrls.contains(oldUrls[bookmark.chapterIndex])) {
+        m_open->setEnabled(false);
+        m_status->setText(tr("新目录缺少书签引用的章节，已保留旧目录、进度和书"
+                             "签。请检查书源规则。"));
+        return;
+      }
+    }
     QString e;
     auto updated = OnlineBook::createManifest(
         m_root, m_cachedBook->source(), m_cachedBook->url(),
         m_title.isEmpty() ? m_cachedBook->title() : m_title, m_chapters, &e);
     if (!updated) {
+      m_open->setEnabled(false);
       m_status->setText(e);
       return;
     }
@@ -374,6 +400,8 @@ void OnlineLibraryDialog::receive(const QJsonObject &r) {
   }
 }
 void OnlineLibraryDialog::openSelection() {
+  if (!m_request.isEmpty() || !m_open->isEnabled() || m_chapters.isEmpty())
+    return;
   if (m_choices) {
     int i = m_toc->currentRow();
     if (i >= 0 && i < m_chapters.size())

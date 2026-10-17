@@ -205,11 +205,30 @@ BookSourceDialog::BookSourceDialog(BookSourceStore *s, OnlineEngineBridge *b,
     m_fields["name"]->setText(m_fields["name"]->text() + tr(" 副本"));
     m_error->setText(tr("副本尚未保存，可修改规则后保存。"));
   });
-  connect(add, &QPushButton::clicked, this, [this, copy] {
-    copy->click();
-    m_fields["name"]->clear();
+  connect(add, &QPushButton::clicked, this, [this] {
+    stopTest();
+    m_readOnly = false;
+    for (auto *edit : m_fields) {
+      edit->setReadOnly(false);
+      edit->clear();
+    }
+    m_fields["id"]->setText("source-" +
+                            QUuid::createUuid().toString(QUuid::Id128));
     m_kind->setCurrentText("html");
-    m_fields["baseUrl"]->clear();
+    m_method->setCurrentText("GET");
+    m_encoding->setCurrentText("auto");
+    m_interval->setValue(1000);
+    m_enabled->setChecked(true);
+    m_reverse->setChecked(false);
+    m_headers->setPlainText("{}");
+    m_testInput->clear();
+    m_testItems->clear();
+    m_preview->clear();
+    m_testRows = {};
+    m_saveCandidate = {};
+    m_operation.clear();
+    m_choices = false;
+    m_error->setText(tr("新书源尚未保存，请填写网站地址和提取规则。"));
   });
   connect(remove, &QPushButton::clicked, this, [this] {
     QString e;

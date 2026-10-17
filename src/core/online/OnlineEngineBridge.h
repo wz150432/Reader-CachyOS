@@ -40,6 +40,8 @@ private:
   QMap<QString, Pending> m_pending;
   quint64 m_id = 0;
   bool m_ready = false;
+  // The dying child must finish before queued requests can start a new one.
+  bool m_stopping = false;
   int m_timeoutMs = 20000;
 };
 } // namespace reader

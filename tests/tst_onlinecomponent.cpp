@@ -78,6 +78,26 @@ private slots:
     QVERIFY(!m.isBusy());
     QVERIFY(!m.isInstalled());
   }
+  void localImportHasNoDownload() {
+    QTemporaryDir d;
+    auto p = package(d.path() + "/local.tar", helper());
+    auto j = metadata(p, helper().size());
+    j["url"] = "";
+    OnlineComponentManager m(d.path() + "/component", "0.1.0", j);
+    QString error;
+    QVERIFY2(m.validateMetadata(j, &error), qPrintable(error));
+    QVERIFY(!m.downloadAvailable());
+    QVERIFY(!m.download(&error));
+    QVERIFY(!m.isBusy());
+    QSignalSpy done(&m, &OnlineComponentManager::finished);
+    QVERIFY2(m.importPackage(p, j, &error), qPrintable(error));
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 10000);
+    QVERIFY2(done[0][0].toBool(), qPrintable(done[0][1].toString()));
+    QVERIFY(m.isEnabled());
+    OnlineComponentManager reopened(d.path() + "/component", "0.1.0", j);
+    QVERIFY(reopened.isEnabled());
+    QVERIFY(!reopened.downloadAvailable());
+  }
   void safeInstallAndPreservation() {
     QTemporaryDir d;
     auto data = helper();

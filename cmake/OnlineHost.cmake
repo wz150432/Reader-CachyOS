@@ -50,3 +50,7 @@ add_test(NAME onlinewindow COMMAND tst_onlinewindow)
 set_tests_properties(onlinewindow PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME=none")
 
 target_compile_definitions(reader_core PUBLIC READER_APP_VERSION="${PROJECT_VERSION}")
+
+qt_add_executable(tst_onlineartifact tests/tst_onlineartifact.cpp)
+target_link_libraries(tst_onlineartifact PRIVATE reader_core Qt6::Test)
+add_test(NAME onlineartifact COMMAND tst_onlineartifact)

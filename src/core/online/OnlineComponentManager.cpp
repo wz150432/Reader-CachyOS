@@ -252,7 +252,8 @@ bool OnlineComponentManager::validateMetadata(const QJsonObject &j,
   if (!QRegularExpression("^[a-f0-9]{64}$")
            .match(j["sha256"].toString())
            .hasMatch() ||
-      !official(QUrl(j["url"].toString())))
+      (!j["url"].isString() ||
+       (!j["url"].toString().isEmpty() && !official(QUrl(j["url"].toString())))))
     return fail(e, "组件校验或官方 HTTPS 下载地址无效");
   return true;
 }
@@ -285,7 +286,8 @@ QString OnlineComponentManager::executablePath() const {
              : QString();
 }
 bool OnlineComponentManager::downloadAvailable() const {
-  return validateMetadata(m_metadata);
+  return validateMetadata(m_metadata) &&
+         official(QUrl(m_metadata["url"].toString()));
 }
 bool OnlineComponentManager::writeRecord(const QJsonObject &j, QString *e) {
   if (!safeRoot() || QFileInfo(m_root + "/active.json").isSymLink() ||

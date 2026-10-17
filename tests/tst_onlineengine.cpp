@@ -132,7 +132,7 @@ private slots:
   void handshake() {
     auto r = call({{"op", "hello"}});
     QVERIFY(r["ok"].toBool());
-    QCOMPARE(r["result"].toObject()["version"].toString(), "0.1.0");
+    QCOMPARE(r["result"].toObject()["version"].toString(), READER_ONLINE_VERSION);
   }
   void malformed() { QVERIFY(!call({{"op", "explode"}})["ok"].toBool()); }
   void strictProtocol() {

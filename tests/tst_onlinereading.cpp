@@ -25,6 +25,22 @@ private slots:
     QCOMPARE(errors[0][1].toString(), QString("session"));
     QVERIFY(results.isEmpty());
   }
+  void bridgeImmediateRestartPreservesNewRequest() {
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+    QSignalSpy results(&bridge, &OnlineEngineBridge::result);
+    QSignalSpy errors(&bridge, &OnlineEngineBridge::error);
+    bridge.request("chapter", {{"url", "https://example.org/first"}}, "first");
+    QTRY_COMPARE(results.size(), 1);
+    for (int i = 0; i < 3; ++i) {
+      bridge.stop();
+      auto id = bridge.request("chapter", {{"url", "https://example.org/restarted"}}, "new-session");
+      QTRY_COMPARE_WITH_TIMEOUT(results.size(), i + 2, 2000);
+      QCOMPARE(results.last()[0].toString(), id);
+      QCOMPARE(results.last()[1].toString(), QString("new-session"));
+      QVERIFY(errors.isEmpty());
+    }
+  }
   void bridgeMissingRetryAndCancel() {
     OnlineEngineBridge bridge;
     QSignalSpy errors(&bridge, &OnlineEngineBridge::error);

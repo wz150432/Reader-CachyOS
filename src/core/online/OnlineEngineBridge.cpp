@@ -3,6 +3,8 @@
 namespace reader {
 OnlineEngineBridge::OnlineEngineBridge(QObject *parent) : QObject(parent) {
   connect(&m_process, &QProcess::started, this, [this] {
+    if (m_stopping)
+      return;
     send({{"protocol", 1}, {"id", "0"}, {"session", ""}, {"op", "hello"}});
   });
   connect(&m_process, &QProcess::readyReadStandardOutput, this,
@@ -11,10 +13,19 @@ OnlineEngineBridge::OnlineEngineBridge(QObject *parent) : QObject(parent) {
           [this] { m_process.readAllStandardError(); });
   connect(
       &m_process, &QProcess::errorOccurred, this,
-      [this](QProcess::ProcessError) { failAll("Online engine unavailable"); });
+      [this](QProcess::ProcessError) {
+        if (!m_stopping)
+          failAll("Online engine unavailable");
+      });
   connect(&m_process, qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
           this, [this](int, QProcess::ExitStatus) {
-            failAll("Online engine stopped");
+            if (m_stopping) {
+              m_stopping = false;
+              if (!m_pending.isEmpty())
+                start();
+            } else {
+              failAll("Online engine stopped");
+            }
           });
 }
 OnlineEngineBridge::~OnlineEngineBridge() {
@@ -72,7 +83,7 @@ QString OnlineEngineBridge::request(const QString &op,
   return id;
 }
 void OnlineEngineBridge::start() {
-  if (m_process.state() != QProcess::NotRunning)
+  if (m_stopping || m_process.state() != QProcess::NotRunning)
     return;
   m_ready = false;
   m_buffer.clear();
@@ -106,7 +117,10 @@ void OnlineEngineBridge::flush() {
   }
 }
 void OnlineEngineBridge::receive() {
-  m_buffer += m_process.readAllStandardOutput();
+  auto bytes = m_process.readAllStandardOutput();
+  if (m_stopping)
+    return;
+  m_buffer += bytes;
   constexpr int limit = 16 * 1024 * 1024;
   while (true) {
     int nl = m_buffer.indexOf('\n');
@@ -193,8 +207,10 @@ void OnlineEngineBridge::failAll(const QString &message) {
   m_buffer.clear();
   auto pending = m_pending;
   m_pending.clear();
-  if (m_process.state() != QProcess::NotRunning)
+  if (m_process.state() != QProcess::NotRunning) {
+    m_stopping = true;
     m_process.kill();
+  }
   for (auto it = pending.begin(); it != pending.end(); ++it) {
     it->timer->stop();
     it->timer->deleteLater();

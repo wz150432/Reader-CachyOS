@@ -65,7 +65,7 @@ void NovelSourceClient::submit(QJsonObject r) {
     return;
   }
   if (j->op == "hello") {
-    j->result = {{"protocol", 1}, {"version", "0.1.0"}};
+    j->result = {{"protocol", 1}, {"version", READER_ONLINE_VERSION}};
     finish(j);
     return;
   }

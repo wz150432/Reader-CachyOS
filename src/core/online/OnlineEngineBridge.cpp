@@ -1,5 +1,39 @@
 #include "OnlineEngineBridge.h"
 #include <QJsonDocument>
+#include <QRegularExpression>
+namespace {
+int operationBudgetMs(const QJsonObject &message) {
+  if (message["op"] == "validate")
+    return 5000;
+  // Per page: up to three attempts with six redirect hops each, plus
+  // two server-requested waits. Keep this distinct from each HTTP's 20s.
+  constexpr qint64 hardLimitMs = 24LL * 60 * 60 * 1000;
+  const qint64 interval = qBound(qint64(500),
+      qint64(message["source"].toObject()["intervalMs"].toInt(1000)), hardLimitMs);
+  const qint64 pages = message["op"] == "toc" ? 100 : message["op"] == "chapter" ? 20 : 1;
+  const qint64 budget = pages * (18 * (20000 + interval) + 2 * 30000);
+  return int(qMin(hardLimitMs, budget));
+}
+QString safeEngineError(const QString &raw, bool validation) {
+  const QStringList fixed{
+      "Malformed protocol", "Duplicate request ID", "Unknown operation",
+      "Source disabled", "Unknown source kind", "Invalid URL", "Pagination cycle",
+      "Pagination limit", "Redirect limit", "Response limit exceeded", "Unsafe redirect",
+      "Rate limit exceeded", "Request timeout", "Network failure", "MediaWiki API error",
+      "Chapter limit exceeded", "Invalid HTML", "Invalid XPath", "Browser challenge", "Empty content"};
+  // Absolute anchors reject trailing newlines as well as secret-bearing suffixes.
+  if (fixed.contains(raw) || QRegularExpression("\\AHTTP [45][0-9]{2}\\z").match(raw).hasMatch())
+    return raw;
+  if (validation) {
+    for (const auto key : {"resultXPath", "titleXPath", "linkXPath", "authorXPath",
+                           "tocUrlXPath", "chapterXPath", "contentXPath", "removeXPath",
+                           "tocNextXPath", "contentNextXPath"})
+      if (raw == "Invalid XPath: " + QString::fromLatin1(key))
+        return raw;
+  }
+  return "Online request failed";
+}
+} // namespace
 namespace reader {
 OnlineEngineBridge::OnlineEngineBridge(QObject *parent) : QObject(parent) {
   connect(&m_process, &QProcess::started, this, [this] {
@@ -64,12 +98,14 @@ QString OnlineEngineBridge::request(const QString &op,
             {"session", p.message["session"]},
             {"op", "cancel"},
             {"target", id}});
-    emit error(id, p.message["session"].toString(), "Online request timed out");
+    emit error(id, p.message["session"].toString(),
+               p.sent || m_timeoutMs > 0 ? "Online request timed out"
+                                        : "Online engine handshake timed out");
     if (m_pending.isEmpty() && !m_ready) {
       m_process.kill();
     }
   });
-  timer->start(m_timeoutMs);
+  timer->start(m_timeoutMs > 0 ? m_timeoutMs : 5000);
   QTimer::singleShot(0, this, [this, id, op] {
     if (!m_pending.contains(id))
       return;
@@ -116,6 +152,8 @@ void OnlineEngineBridge::flush() {
       continue;
     it->sent = true;
     const QJsonObject message = it->message;
+    if (m_timeoutMs == 0)
+      it->timer->start(operationBudgetMs(message));
     send(message);
   }
 }
@@ -174,22 +212,9 @@ void OnlineEngineBridge::receive() {
     p.timer->deleteLater();
     if (j["ok"].toBool())
       emit result(id, j["session"].toString(), j["result"].toObject());
-    else {
-      QString message = "Online request failed";
-      if (p.message["op"] == "validate") {
-        const auto raw = j["error"].toString();
-        for (const auto key :
-             {"resultXPath", "titleXPath", "linkXPath", "authorXPath",
-              "tocUrlXPath", "chapterXPath", "contentXPath", "removeXPath",
-              "tocNextXPath", "contentNextXPath"}) {
-          if (raw == "Invalid XPath: " + QString::fromLatin1(key)) {
-            message = raw;
-            break;
-          }
-        }
-      }
-      emit error(id, j["session"].toString(), message);
-    }
+    else
+      emit error(id, j["session"].toString(),
+                 safeEngineError(j["error"].toString(), p.message["op"] == "validate"));
   }
 }
 void OnlineEngineBridge::cancel(const QString &id) {

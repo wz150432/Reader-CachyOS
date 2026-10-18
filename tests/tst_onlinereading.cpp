@@ -6,6 +6,46 @@ using namespace reader;
 class ReadingTest : public QObject {
   Q_OBJECT
 private slots:
+  void bridgeDefaultHandshakeIsBounded() {
+    qputenv("READER_FIXTURE_HANG_HELLO", "1");
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+    QSignalSpy errors(&bridge, &OnlineEngineBridge::error);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    bridge.request("toc", {}, "hung-hello");
+    while (errors.isEmpty() && elapsed.elapsed() < 6500)
+      QTest::qWait(10);
+    qunsetenv("READER_FIXTURE_HANG_HELLO");
+    QCOMPARE(errors.size(), 1);
+    QCOMPARE(errors.first()[2].toString(), QString("Online engine handshake timed out"));
+    QVERIFY(elapsed.elapsed() < 6000);
+    bridge.setExecutablePath({});
+    bridge.request("validate", {}, "teardown");
+    QTRY_COMPARE(errors.size(), 2);
+  }
+  void bridgeSafeErrors_data() {
+    QTest::addColumn<QString>("raw");
+    QTest::addColumn<QString>("expected");
+    for (const auto message : {"HTTP 403", "HTTP 404", "HTTP 429", "HTTP 503", "Browser challenge",
+                               "Empty content", "Invalid XPath", "Pagination limit", "Network failure", "Rate limit exceeded"})
+      QTest::newRow(message) << QString(message) << QString(message);
+    for (const auto message : {"HTTP 403 Cookie=secret", "HTTP 999", "HTTP 403\n", "Empty content secret", "Cookie=secret"})
+      QTest::newRow(message) << QString(message) << QString("Online request failed");
+  }
+  void bridgeSafeErrors() {
+    QFETCH(QString, raw);
+    QFETCH(QString, expected);
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+    QSignalSpy errors(&bridge, &OnlineEngineBridge::error);
+    bridge.request("chapter", {{"fixtureError", raw}}, "error");
+    QTRY_COMPARE(errors.size(), 1);
+    QCOMPARE(errors.first()[2].toString(), expected);
+    bridge.setExecutablePath({});
+    bridge.request("validate", {}, "teardown");
+    QTRY_COMPARE(errors.size(), 2);
+  }
   void bridgeRejectsBrokenProcesses_data() {
     QTest::addColumn<QString>("mode");
     for (const auto &mode : {"crash", "timeout", "malformed", "oversize"})
@@ -24,6 +64,9 @@ private slots:
     QCOMPARE(errors[0][0].toString(), id);
     QCOMPARE(errors[0][1].toString(), QString("session"));
     QVERIFY(results.isEmpty());
+    bridge.setExecutablePath({});
+    bridge.request("validate", {}, "teardown");
+    QTRY_COMPARE(errors.size(), 2);
   }
   void bridgeFailedStartThenImmediateRestart() {
     OnlineEngineBridge bridge;

@@ -81,11 +81,38 @@ ParsedPage HtmlRuleParser::parse(const QByteArray &body, const QUrl &url,
     xmlXPathFreeObject(r);
     return list;
   };
-  auto first = [&](QString xp, xmlNodePtr n = nullptr) {
-    auto a = nodes(xp, n);
-    return a.isEmpty() ? QString() : value(a.first());
+  auto first = [&](QString xp, xmlNodePtr n = nullptr, bool link = false) {
+    if (xp.isEmpty())
+      return QString();
+    ctx->node = n ? n : xmlDocGetRootElement(doc);
+    auto r = xmlXPathEvalExpression(
+        reinterpret_cast<const xmlChar *>(xp.toUtf8().constData()), ctx);
+    if (!r) {
+      out.error = "Invalid XPath";
+      return QString();
+    }
+    QString text;
+    if (r->type == XPATH_NODESET) {
+      if (r->nodesetval && r->nodesetval->nodeNr) {
+        auto node = r->nodesetval->nodeTab[0];
+        if (link && node->type == XML_ELEMENT_NODE) {
+          auto href = xmlGetProp(node, BAD_CAST "href");
+          text = QString::fromUtf8(reinterpret_cast<const char *>(href)).trimmed();
+          xmlFree(href);
+        } else
+          text = value(node);
+      }
+    } else {
+      auto scalar = xmlXPathCastToString(r);
+      text = QString::fromUtf8(reinterpret_cast<const char *>(scalar)).trimmed();
+      xmlFree(scalar);
+    }
+    xmlXPathFreeObject(r);
+    return text;
   };
   auto absolute = [&](QString v) {
+    if (v.trimmed().isEmpty())
+      return QString();
     auto u = url.resolved(QUrl(v));
     return (u.scheme() == "https" || u.scheme() == "http") &&
                    u.userInfo().isEmpty()
@@ -117,7 +144,7 @@ ParsedPage HtmlRuleParser::parse(const QByteArray &body, const QUrl &url,
   if (op == "search") {
     QJsonArray books;
     for (auto n : nodes(source["resultXPath"].toString())) {
-      QString link = first(source["linkXPath"].toString(), n);
+      QString link = first(source["linkXPath"].toString(), n, true);
       QString t = first(source["titleXPath"].toString(), n);
       auto u = absolute(link);
       if (!u.isEmpty() && !t.isEmpty())
@@ -144,9 +171,9 @@ ParsedPage HtmlRuleParser::parse(const QByteArray &body, const QUrl &url,
     }
     out.result["chapters"] = chapters;
     out.result["choices"] = QJsonArray();
-    out.next = first(source["tocNextXPath"].toString());
+    out.next = first(source["tocNextXPath"].toString(), nullptr, true);
     if (chapters.isEmpty() && out.next.isEmpty())
-      out.next = first(source["tocUrlXPath"].toString());
+      out.next = first(source["tocUrlXPath"].toString(), nullptr, true);
   } else {
     QString text;
     for (auto n : nodes(source["contentXPath"].toString()))
@@ -157,7 +184,7 @@ ParsedPage HtmlRuleParser::parse(const QByteArray &body, const QUrl &url,
     if (text.isEmpty() && out.error.isEmpty())
       out.error = "Empty content";
     out.result["text"] = text;
-    out.next = first(source["contentNextXPath"].toString());
+    out.next = first(source["contentNextXPath"].toString(), nullptr, true);
   }
   if (!out.next.isEmpty())
     out.next = absolute(out.next);

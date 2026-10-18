@@ -10,6 +10,28 @@
 #include <QUrlQuery>
 #include <QtConcurrent>
 #include <algorithm>
+#include <iconv.h>
+namespace {
+QByteArray escapedKeyword(const QString &keyword, const QString &encoding) {
+  auto bytes = keyword.toUtf8();
+  if (encoding == "GB18030") {
+    // GB18030 represents every Unicode scalar; Linux iconv is part of libc.
+    auto converter = iconv_open("GB18030", "UTF-8");
+    if (converter == (iconv_t)-1)
+      return {};
+    QByteArray converted(bytes.size() * 4 + 16, '\0');
+    char *input = bytes.data(), *output = converted.data();
+    size_t inputLeft = bytes.size(), outputLeft = converted.size();
+    auto result = iconv(converter, &input, &inputLeft, &output, &outputLeft);
+    iconv_close(converter);
+    if (result == size_t(-1))
+      return {};
+    converted.resize(converted.size() - outputLeft);
+    bytes = converted;
+  }
+  return bytes.toPercentEncoding();
+}
+} // namespace
 struct NovelSourceClient::Job {
   QJsonObject request, source, result;
   QString id, op, key;
@@ -121,8 +143,8 @@ void NovelSourceClient::submit(QJsonObject r) {
     u.setQuery(q);
   } else if (j->op == "search") {
     QString s = j->source["searchUrl"].toString();
-    s.replace("{keyword}", QString::fromLatin1(QUrl::toPercentEncoding(
-                               r["keyword"].toString())));
+    s.replace("{keyword}", QString::fromLatin1(escapedKeyword(
+                               r["keyword"].toString(), j->source["encoding"].toString())));
     s.replace("{page}", QString::number(r["page"].toInt(1)));
     u = QUrl(s);
   }
@@ -186,8 +208,8 @@ void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
     QNetworkReply *r;
     if (post) {
       QString body = j->source["searchBody"].toString();
-      body.replace("{keyword}", QString::fromLatin1(QUrl::toPercentEncoding(
-                                    j->request["keyword"].toString())));
+      body.replace("{keyword}", QString::fromLatin1(escapedKeyword(
+                                    j->request["keyword"].toString(), j->source["encoding"].toString())));
       body.replace("{page}", QString::number(j->request["page"].toInt(1)));
       req.setHeader(QNetworkRequest::ContentTypeHeader,
                     "application/x-www-form-urlencoded");
@@ -241,7 +263,33 @@ void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
               (!status && r->error() != QNetworkReply::NoError &&
                !r->property("deadline").toBool())) {
             if (retries < 2) {
-              fetch(j, u, redirects, retries + 1, post);
+              constexpr qint64 maxRetryDelayMs = 30000;
+              qint64 delay = 1000LL << retries;
+              const auto header = QString::fromLatin1(r->rawHeader("Retry-After")).trimmed();
+              if (QRegularExpression("^[0-9]+$").match(header).hasMatch()) {
+                bool valid = false;
+                const auto seconds = header.toLongLong(&valid);
+                delay = !valid || seconds > maxRetryDelayMs / 1000
+                            ? maxRetryDelayMs + 1 : qMax(delay, seconds * 1000);
+              } else {
+                // Qt's RFC2822 parser requires a numeric zone; HTTP uses GMT.
+                const auto normalized = header.endsWith(" GMT")
+                                            ? header.chopped(3) + "+0000" : header;
+                const auto date = QDateTime::fromString(normalized, Qt::RFC2822Date);
+                if (date.isValid())
+                  delay = qMax(delay, QDateTime::currentDateTimeUtc().msecsTo(date));
+              }
+              // Never retry before the server's requested time. Long waits are
+              // surfaced so the user can retry later instead of tying up a job.
+              if (delay > maxRetryDelayMs) {
+                finish(j, "Rate limit exceeded");
+                return;
+              }
+              QTimer::singleShot(int(delay), Qt::PreciseTimer, this,
+                                 [this, j, u, redirects, retries, post] {
+                if (!j->cancelled)
+                  fetch(j, u, redirects, retries + 1, post);
+              });
               return;
             }
           }

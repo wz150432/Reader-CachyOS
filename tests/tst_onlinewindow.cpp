@@ -58,6 +58,40 @@ private:
     return manager->importPackage(path, metadata);
   }
 private slots:
+  void bookmarksRequireDisplayedCommittedChapter() {
+    QTemporaryDir dir;
+    auto book = OnlineBook::createManifest(dir.path(), BookSource::preset(),
+        "https://example.org/bookmark", "Bookmark",
+        QJsonArray{QJsonObject{{"title", "First"}, {"url", "https://example.org/first"}},
+                   QJsonObject{{"title", "Saved"}, {"url", "https://example.org/saved"}}});
+    QVERIFY(book);
+    Cache cache;
+    cache.load();
+    cache.upsertProgress({book->filePath(), 1, 3, 123, 12.5});
+    cache.save();
+    MainWindow window;
+    window.openBook(book->filePath());
+    auto view = window.findChild<ReadingView *>("readingView");
+    QCOMPARE(view->pendingChapter(), 1);
+    QVERIFY(!view->committedChapterReady());
+    window.addBookmarkForCurrentBook();
+    cache.load();
+    QVERIFY(cache.bookmarks(book->filePath()).isEmpty());
+    QVERIFY(book->saveChapter(0, "Displayed cached text"));
+    view->goToChapter(0);
+    QVERIFY(view->committedChapterReady());
+    window.addBookmarkForCurrentBook();
+    cache.load();
+    QCOMPARE(cache.bookmarks(book->filePath()).size(), 1);
+    QCOMPARE(cache.bookmarks(book->filePath()).first().chapterIndex, 0);
+    view->goToChapter(1);
+    QCOMPARE(view->pendingChapter(), 1);
+    QVERIFY(view->committedChapterReady());
+    window.addBookmarkForCurrentBook();
+    cache.load();
+    for (const auto &mark : cache.bookmarks(book->filePath()))
+      QCOMPARE(mark.chapterIndex, 0);
+  }
   void installedLibraryAndAsyncResume() {
     QTemporaryDir dir;
     auto book = OnlineBook::createManifest(

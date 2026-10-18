@@ -34,6 +34,8 @@ int main(int argc, char **argv) {
       QThread::msleep(100);
     QJsonObject result;
     if (op == "hello") {
+      if (qEnvironmentVariableIsSet("READER_FIXTURE_HANG_HELLO"))
+        continue;
       const auto marker = qEnvironmentVariable("READER_FIXTURE_HELLO_MARKER");
       if (!marker.isEmpty()) {
         QFile f(marker);
@@ -91,6 +93,11 @@ int main(int argc, char **argv) {
                      : mode == "validate-secret"
                          ? "Invalid XPath: contentXPath Cookie=private-secret"
                          : "Invalid XPath: unknownXPath";
+    }
+    if (j.contains("fixtureError") || j["source"].toObject().contains("fixtureError")) {
+      out["ok"] = false;
+      out.remove("result");
+      out["error"] = j.contains("fixtureError") ? j["fixtureError"] : j["source"].toObject()["fixtureError"];
     }
     auto bytes = QJsonDocument(out).toJson(QJsonDocument::Compact);
     std::cout << bytes.constData() << std::endl;

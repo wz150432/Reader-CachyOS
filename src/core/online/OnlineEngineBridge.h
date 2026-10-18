@@ -43,6 +43,8 @@ private:
   bool m_ready = false;
   // The dying child must finish before queued requests can start a new one.
   bool m_stopping = false;
-  int m_timeoutMs = 20000;
+  // Zero selects bounded per-operation budgets after a separate 5s hello wait.
+  // Explicit overrides retain an end-to-end deadline for tests/callers.
+  int m_timeoutMs = 0;
 };
 } // namespace reader

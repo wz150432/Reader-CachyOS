@@ -21,6 +21,28 @@ class DialogTest : public QObject {
   Q_OBJECT
 
 private slots:
+  void libraryShowsSafeEngineFailure() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.filePath("sources.json"));
+    QVERIFY(store.load());
+    auto source = BookSource::preset().copy("blocked", "Blocked").toJson();
+    source["fixtureError"] = "HTTP 403";
+    QVERIFY(store.upsert(BookSource(source)));
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+    OnlineLibraryDialog dialog(&store, &bridge, dir.filePath("books"));
+    auto sources = dialog.findChild<QComboBox *>("librarySources");
+    QVERIFY(sources);
+    sources->setCurrentIndex(sources->findData("blocked"));
+    dialog.findChild<QLineEdit *>("directUrl")->setText("https://example.org/book");
+    dialog.findChild<QPushButton *>("importUrl")->click();
+    auto status = dialog.findChild<QLabel *>("libraryStatus");
+    QTRY_VERIFY(status->text().contains("HTTP 403"));
+    QSignalSpy errors(&bridge, &OnlineEngineBridge::error);
+    bridge.setExecutablePath({});
+    bridge.request("validate", {}, "teardown");
+    QTRY_COMPARE(errors.size(), 1);
+  }
   void newSourceDoesNotCopyHiddenCredentials() {
     QTemporaryDir dir;
     BookSourceStore store(dir.path() + "/sources.json");
@@ -150,6 +172,9 @@ private slots:
       QCOMPARE(errors[1][2].toString(), QString("Online request failed"));
       errors.removeLast();
     }
+    bridge.setExecutablePath({});
+    bridge.request("validate", {}, "teardown");
+    QTRY_COMPARE(errors.size(), 2);
   }
 
   void captureActualWidgets() {

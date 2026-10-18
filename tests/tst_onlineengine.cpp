@@ -1,3 +1,4 @@
+#include "core/online/OnlineEngineBridge.h"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -11,6 +12,8 @@ class EngineTest : public QObject {
   QTcpServer server;
   QString base;
   QByteArray lastRequest;
+  QList<qint64> retryTimes;
+  QByteArray retryAfter;
   QJsonObject call(QJsonObject o) {
     o["protocol"] = 1;
     o["id"] = "x";
@@ -68,7 +71,18 @@ private slots:
           QByteArray charset = "utf-8";
           QByteArray body;
           int status = 200;
-          if (path.startsWith("/post-redirect/")) {
+          if (path.startsWith("/pages/")) {
+            int page = path.mid(7).toInt();
+            body = "<a class='chapter' href='/chapter/" + QByteArray::number(page) + "'>Chapter</a>";
+            if (page < 24)
+              body += "<a rel='next' href='/pages/" + QByteArray::number(page + 1) + "'>Next</a>";
+          } else if (path == "/retry") {
+            retryTimes.append(QDateTime::currentMSecsSinceEpoch());
+            s->write("HTTP/1.1 429 Limited\r\nRetry-After: " + retryAfter +
+                     "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            s->disconnectFromHost();
+            return;
+          } else if (path.startsWith("/post-redirect/")) {
             auto code = path.mid(QByteArray("/post-redirect/").size());
             s->write("HTTP/1.1 " + code + " Redirect\r\nLocation: /search\r\n"
                      "Content-Length: 0\r\nConnection: close\r\n\r\n");
@@ -219,6 +233,132 @@ private slots:
     engine.waitForFinished(3000);
     QVERIFY2(rejected, reply.constData());
     QVERIFY(lastRequest.isEmpty());
+  }
+  void bridgeAllowsPacedPaginationBeyondTwentySeconds() {
+    reader::OnlineEngineBridge bridge;
+    bridge.setExecutablePath(ENGINE_PATH);
+    QSignalSpy replies(&bridge, &reader::OnlineEngineBridge::result);
+    QSignalSpy errors(&bridge, &reader::OnlineEngineBridge::error);
+    auto s = source();
+    s["intervalMs"] = 1000;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    bridge.request("toc", {{"source", s}, {"url", base + "/pages/1"}}, "long-toc");
+    QTRY_VERIFY_WITH_TIMEOUT(!replies.isEmpty() || !errors.isEmpty(), 28000);
+    QVERIFY2(errors.isEmpty(), errors.isEmpty() ? "" : qPrintable(errors.first()[2].toString()));
+    QCOMPARE(replies.size(), 1);
+    QCOMPARE(replies.first()[2].toJsonObject()["chapters"].toArray().size(), 24);
+    QVERIFY(elapsed.elapsed() > 20000);
+    bridge.setExecutablePath({});
+    bridge.request("validate", {}, "teardown");
+    QTRY_COMPARE(errors.size(), 1);
+  }
+  void retryBackoff_data() {
+    QTest::addColumn<QByteArray>("header");
+    QTest::newRow("increasing") << QByteArray("invalid");
+    QTest::newRow("delta-seconds") << QByteArray("2");
+    QTest::newRow("http-date") << QByteArray("date");
+    QTest::newRow("beyond-bound") << QByteArray("3600");
+  }
+  void retryBackoff() {
+    QFETCH(QByteArray, header);
+    retryTimes.clear();
+    retryAfter = header;
+    qint64 dateDeadline = 0;
+    if (header == "date") {
+      auto date = QDateTime::currentDateTimeUtc().addSecs(3);
+      retryAfter = QLocale::c().toString(date, "ddd, dd MMM yyyy HH:mm:ss 'GMT'").toLatin1();
+      dateDeadline = (date.toMSecsSinceEpoch() / 1000) * 1000;
+    }
+    auto r = call({{"op", "chapter"}, {"source", source()}, {"url", base + "/retry"}});
+    QVERIFY(!r["ok"].toBool());
+    if (header == "3600") {
+      QCOMPARE(r["error"].toString(), QString("Rate limit exceeded"));
+      QCOMPARE(retryTimes.size(), 1);
+      return;
+    }
+    QCOMPARE(r["error"].toString(), QString("HTTP 429"));
+    QCOMPARE(retryTimes.size(), 3);
+    QVERIFY(retryTimes[1] - retryTimes[0] >= (header == "2" ? 2000 : 1000));
+    QVERIFY(retryTimes[2] - retryTimes[1] >= 2000);
+    if (dateDeadline)
+      QVERIFY(retryTimes[1] >= dateDeadline);
+  }
+  void cancelDuringRetryDelay() {
+    retryTimes.clear();
+    retryAfter = "2";
+    QJsonObject request{{"protocol", 1}, {"id", "retry-cancel"}, {"session", "s"},
+                        {"op", "chapter"}, {"source", source()}, {"url", base + "/retry"}};
+    p.write(QJsonDocument(request).toJson(QJsonDocument::Compact) + "\n");
+    QTRY_COMPARE_WITH_TIMEOUT(retryTimes.size(), 1, 1500);
+    auto r = call({{"op", "cancel"}, {"target", "retry-cancel"}});
+    QVERIFY(r["ok"].toBool());
+    QTest::qWait(2200);
+    QCOMPARE(retryTimes.size(), 1);
+    QVERIFY(p.readAllStandardOutput().isEmpty());
+  }
+  void keywordEncoding_data() {
+    QTest::addColumn<QString>("method");
+    QTest::addColumn<QString>("encoding");
+    QTest::addColumn<QByteArray>("escaped");
+    for (const auto method : {"GET", "POST"}) {
+      QTest::newRow(qPrintable(QString(method) + "-GB18030"))
+          << QString(method) << QString("GB18030") << QByteArray("%BA%EC%C2%A5%C3%CE");
+      QTest::newRow(qPrintable(QString(method) + "-UTF8"))
+          << QString(method) << QString("UTF-8") << QByteArray("%E7%BA%A2%E6%A5%BC%E6%A2%A6");
+    }
+  }
+  void keywordEncoding() {
+    QFETCH(QString, method);
+    QFETCH(QString, encoding);
+    QFETCH(QByteArray, escaped);
+    auto s = source();
+    s["encoding"] = encoding;
+    s["searchMethod"] = method;
+    s["searchUrl"] = base + (method == "GET" ? "/search?q={keyword}" : "/search");
+    s["searchBody"] = "q={keyword}";
+    auto r = call({{"op", "search"}, {"source", s}, {"keyword", "红楼梦"}});
+    QVERIFY(r["ok"].toBool());
+    QVERIFY2(lastRequest.contains("q=" + escaped), lastRequest.constData());
+  }
+  void linkForms_data() {
+    QTest::addColumn<QString>("xpath");
+    QTest::addColumn<bool>("missing");
+    QTest::newRow("attribute") << QString(".//a/@href") << false;
+    QTest::newRow("element") << QString(".//a") << false;
+    QTest::newRow("scalar") << QString("string(.//a/@href)") << false;
+    QTest::newRow("missing") << QString(".//missing/@href") << true;
+    QTest::newRow("empty-scalar") << QString("string(.//missing/@href)") << true;
+  }
+  void linkForms() {
+    QFETCH(QString, xpath);
+    QFETCH(bool, missing);
+    auto s = source();
+    s["linkXPath"] = xpath;
+    if (xpath.startsWith("string(") && !missing)
+      s["titleXPath"] = "string(.//a)";
+    auto r = call({{"op", "search"}, {"source", s}, {"keyword", "x"}});
+    QVERIFY(r["ok"].toBool());
+    auto books = r["result"].toObject()["books"].toArray();
+    QCOMPARE(books.size(), missing ? 0 : 1);
+    if (!missing)
+      QCOMPARE(books.first().toObject()["url"].toString(), base + "/book/1");
+  }
+  void paginationLinkForms_data() {
+    QTest::addColumn<QString>("next");
+    QTest::addColumn<QString>("landing");
+    QTest::newRow("element") << QString("//a[@rel='next']") << QString("//a[@id='contents']");
+    QTest::newRow("scalar") << QString("string(//a[@rel='next']/@href)") << QString("string(//a[@id='contents']/@href)");
+  }
+  void paginationLinkForms() {
+    QFETCH(QString, next);
+    QFETCH(QString, landing);
+    auto s = source();
+    s["tocNextXPath"] = next;
+    s["tocUrlXPath"] = landing;
+    auto r = call({{"op", "toc"}, {"source", s}, {"url", base + "/landing"}});
+    QVERIFY(r["ok"].toBool());
+    QCOMPARE(r["result"].toObject()["chapters"].toArray().size(), 2);
   }
   void search() {
     auto r = call({{"op", "search"}, {"source", source()}, {"keyword", "x"}});

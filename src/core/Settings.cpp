@@ -40,6 +40,7 @@ void Settings::load()
     const QJsonObject window = doc.object().value(QStringLiteral("window")).toObject();
     windowGeometry = QByteArray::fromBase64(window.value(QStringLiteral("geometry")).toString().toUtf8());
     windowState = QByteArray::fromBase64(window.value(QStringLiteral("state")).toString().toUtf8());
+    menuBarHidden = window.value(QStringLiteral("menu_bar_hidden")).toBool(false);
     const QJsonObject niriPosition = window.value(QStringLiteral("niri_floating_position")).toObject();
     if (niriPosition.value(QStringLiteral("x")).isDouble()
         && niriPosition.value(QStringLiteral("y")).isDouble()) {
@@ -66,6 +67,7 @@ void Settings::save() const
     QJsonObject window;
     window.insert(QStringLiteral("geometry"), QString::fromLatin1(windowGeometry.toBase64()));
     window.insert(QStringLiteral("state"), QString::fromLatin1(windowState.toBase64()));
+    window.insert(QStringLiteral("menu_bar_hidden"), menuBarHidden);
     if (hasNiriFloatingPosition) {
         QJsonObject position;
         position.insert(QStringLiteral("x"), niriFloatingPosition.x());

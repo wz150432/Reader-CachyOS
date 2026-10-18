@@ -11,6 +11,7 @@ private slots:
     void missingFileIsEmpty();
     void upsertAndRoundtrip();
     void recentFilesOrdering();
+    void recentFilesBreakTimestampTiesByLatestUse();
     void clearAll();
     void clearRecentKeepsBookmarks();
     void removeRecentFileRemovesOnlyOne();
@@ -63,6 +64,21 @@ void TestCache::recentFilesOrdering()
     QCOMPARE(recent, QStringList({QStringLiteral("/books/b.txt"),
                                   QStringLiteral("/books/c.txt"),
                                   QStringLiteral("/books/a.txt")}));
+}
+
+void TestCache::recentFilesBreakTimestampTiesByLatestUse()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("cache.json");
+    Cache cache(path);
+    cache.upsertProgress({"a.txt", 0, 0, 1000});
+    cache.upsertProgress({"b.txt", 0, 0, 1000});
+    QCOMPARE(cache.recentFiles().first(), QStringLiteral("b.txt"));
+    cache.upsertProgress({"a.txt", 0, 1, 1000});
+    cache.save();
+    Cache restored(path);
+    restored.load();
+    QCOMPARE(restored.recentFiles().first(), QStringLiteral("a.txt"));
 }
 
 void TestCache::clearAll()

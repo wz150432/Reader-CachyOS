@@ -11,10 +11,60 @@ class TestReadingView : public QObject
 {
     Q_OBJECT
 private slots:
+    void readingBackgroundHasSmoothCorners_data();
+    void readingBackgroundHasSmoothCorners();
     void setBookAndNavigate();
     void keyAndWheelNavigation();
     void leftClickPagesOnRelease();
 };
+
+void TestReadingView::readingBackgroundHasSmoothCorners_data()
+{
+    QTest::addColumn<bool>("backgroundImage");
+    QTest::addColumn<int>("alpha");
+    QTest::newRow("solid") << false << 255;
+    QTest::newRow("image") << true << 255;
+    QTest::newRow("transparent-solid") << false << 128;
+    QTest::newRow("transparent-image") << true << 128;
+}
+
+void TestReadingView::readingBackgroundHasSmoothCorners()
+{
+    QFETCH(bool, backgroundImage);
+    QFETCH(int, alpha);
+    QTemporaryDir directory;
+    DisplaySettings settings;
+    settings.bgColor = Qt::black;
+    settings.windowAlpha = alpha;
+    if (backgroundImage) {
+        QImage texture(30, 30, QImage::Format_ARGB32);
+        texture.fill(Qt::blue);
+        settings.bgImagePath = directory.filePath(QStringLiteral("background.png"));
+        QVERIFY(texture.save(settings.bgImagePath));
+    }
+    ReadingView view;
+    view.resize(320, 120);
+    view.setSettings(settings);
+    view.show();
+    const QImage image = view.grab().toImage();
+    for (const QPoint corner : {QPoint(0, 0), QPoint(319, 0), QPoint(0, 119), QPoint(319, 119)})
+        QCOMPARE(image.pixelColor(corner).alpha(), 0);
+    // The surface remains filled away from its curved edge.
+    const QColor edge = image.pixelColor(160, 2);
+    if (alpha == 255) {
+        QCOMPARE(edge.alpha(), 255);
+        QCOMPARE(edge.rgb(), QColor(backgroundImage ? Qt::blue : Qt::black).rgb());
+    } else {
+        QVERIFY(edge.alpha() > 0 && edge.alpha() < 255);
+    }
+    bool smoothEdge = false;
+    for (int y = 0; y < 16; ++y)
+        for (int x = 0; x < 16; ++x) {
+            const int coverage = image.pixelColor(x, y).alpha();
+            smoothEdge |= coverage > 0 && coverage < alpha;
+        }
+    QVERIFY2(smoothEdge, "Rounded edges must include antialiased coverage");
+}
 
 static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
 {

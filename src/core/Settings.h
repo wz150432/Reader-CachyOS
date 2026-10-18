@@ -58,6 +58,7 @@ public:
     QString chapterRegex;
     QByteArray windowGeometry;
     QByteArray windowState;
+    bool menuBarHidden = false;
     bool hasNiriFloatingPosition = false;
     QPoint niriFloatingPosition;
     void load();

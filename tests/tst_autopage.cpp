@@ -11,6 +11,7 @@ class TestAutoPage : public QObject
 {
     Q_OBJECT
 private slots:
+    void hiddenViewPausesAndResumes();
     void toggleStartsAndStops();
     void timerAdvancesPageInFlipMode();
     void timerScrollsInScrollMode();
@@ -29,6 +30,31 @@ static std::shared_ptr<Book> makeBook(const QTemporaryDir &dir)
     f.close();
     QString err;
     return Book::create(path, &err);
+}
+
+void TestAutoPage::hiddenViewPausesAndResumes()
+{
+    QTemporaryDir dir;
+    ReadingView view;
+    BehaviorSettings behavior;
+    behavior.autoPageIntervalMs = 15;
+    view.setBehavior(behavior);
+    view.setBook(makeBook(dir));
+    view.resize(400, 150);
+    view.show();
+    view.startAutoPage();
+    view.hide();
+    const int before = view.currentPage();
+    QTest::qWait(80);
+    QCOMPARE(view.currentPage(), before);
+    QVERIFY(!view.findChild<QTimer *>()->isActive());
+    view.show();
+    QTRY_VERIFY_WITH_TIMEOUT(view.currentPage() != before, 500);
+    view.hide();
+    view.stopAutoPage();
+    view.show();
+    QTest::qWait(60);
+    QVERIFY(!view.isAutoPaging());
 }
 
 void TestAutoPage::toggleStartsAndStops()

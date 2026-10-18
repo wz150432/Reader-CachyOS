@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QTreeWidget>
 #include <QMenuBar>
+#include <QMenu>
 #include <QWheelEvent>
 #include <QTemporaryDir>
 #include <QSlider>
@@ -16,11 +17,14 @@ class TestWindow : public QObject
 {
     Q_OBJECT
 private slots:
+    void menuVisibilitySurvivesExit();
     void hideAndShow();
     void translucentBackgroundEnabled();
     void fullscreenToggle();
     void alwaysOnTopToggle();
     void hideBorderToggle();
+    void hiddenMenuPreservesReadingArea();
+    void popupMenuHasTransparentCorners();
     void autopageReflectsSettings();
     void altHShortcutHidesWindow();
     void dualButtonPressHidesWindow();
@@ -33,6 +37,31 @@ private slots:
     void resizeGripsCoverWindowEdges();
     void resizeGripsHideInFullscreen();
 };
+
+void TestWindow::menuVisibilitySurvivesExit()
+{
+    {
+        MainWindow window;
+        window.show();
+        if (!window.menuBar()->isHidden())
+            window.toggleHideBorder();
+        window.quitApplication();
+    }
+    {
+        MainWindow resumed;
+        resumed.applyWindowState();
+        resumed.show();
+        QVERIFY(resumed.menuBar()->isHidden());
+        QVERIFY(resumed.windowFlags().testFlag(Qt::FramelessWindowHint));
+        resumed.toggleHideBorder();
+        resumed.quitApplication();
+    }
+    MainWindow shown;
+    shown.applyWindowState();
+    shown.show();
+    QVERIFY(!shown.menuBar()->isHidden());
+    QVERIFY(!shown.windowFlags().testFlag(Qt::FramelessWindowHint));
+}
 
 void TestWindow::hideAndShow()
 {
@@ -80,6 +109,79 @@ void TestWindow::hideBorderToggle()
     w.toggleHideBorder();
     QVERIFY(w.menuBar()->isVisible());
     QVERIFY(!w.windowFlags().testFlag(Qt::FramelessWindowHint));
+}
+
+void TestWindow::hiddenMenuPreservesReadingArea()
+{
+    QRect readingArea;
+    {
+        MainWindow window;
+        window.resize(640, 480);
+        window.show();
+        if (window.menuBar()->isHidden()) window.toggleHideBorder();
+        QCoreApplication::processEvents();
+        auto *view = window.findChild<ReadingView *>();
+        QVERIFY(view);
+        QTemporaryDir bookDirectory;
+        QFile book(bookDirectory.filePath(QStringLiteral("sample.txt")));
+        QVERIFY(book.open(QIODevice::WriteOnly));
+        for (int line = 0; line < 500; ++line)
+            book.write(QStringLiteral("正文内容保持原来的区域和页码，不因菜单隐藏而重新布局。\n").toUtf8());
+        book.close();
+        window.openBook(book.fileName());
+        view->goToPage(5);
+        QCOMPARE(view->currentPage(), 5);
+        readingArea = view->geometry();
+        QVERIFY(readingArea.top() > 0);
+        const auto verifyCorners = [view](bool roundedTop) {
+            const QImage image = view->grab().toImage();
+            QCOMPARE(image.pixelColor(0, 0).alpha() == 0, roundedTop);
+            QCOMPARE(image.pixelColor(image.width() - 1, 0).alpha() == 0, roundedTop);
+            QCOMPARE(image.pixelColor(0, image.height() - 1).alpha(), 0);
+            QCOMPARE(image.pixelColor(image.width() - 1, image.height() - 1).alpha(), 0);
+        };
+        verifyCorners(false);
+        for (int i = 0; i < 3; ++i) {
+            window.toggleHideBorder();
+            QCoreApplication::processEvents();
+            QVERIFY(window.menuBar()->isHidden());
+            QCOMPARE(view->geometry(), readingArea);
+            QCOMPARE(view->currentPage(), 5);
+            verifyCorners(true);
+            const QImage hidden = window.grab().toImage();
+            QVERIFY2(hidden.pixelColor(20, 10).alpha() == 0,
+                     "The hidden menu strip must stay transparent");
+            if (i < 2) {
+                window.toggleHideBorder();
+                QCoreApplication::processEvents();
+                QCOMPARE(view->geometry(), readingArea);
+                verifyCorners(false);
+            }
+        }
+    }
+    MainWindow restored;
+    restored.resize(640, 480);
+    restored.show();
+    QCoreApplication::processEvents();
+    QVERIFY(restored.menuBar()->isHidden());
+    QCOMPARE(restored.findChild<ReadingView *>()->geometry(), readingArea);
+    QCOMPARE(restored.findChild<ReadingView *>()->grab().toImage().pixelColor(0, 0).alpha(), 0);
+    restored.toggleHideBorder();
+}
+
+void TestWindow::popupMenuHasTransparentCorners()
+{
+    MainWindow window;
+    window.show();
+    auto *menu = window.findChild<QMenu *>(QStringLiteral("openMenu"));
+    QVERIFY(menu);
+    menu->popup(window.mapToGlobal(QPoint(20, 40)));
+    QCoreApplication::processEvents();
+    const QImage image = menu->grab().toImage();
+    menu->hide();
+    QVERIFY(!image.isNull());
+    QVERIFY2(image.pixelColor(0, 0).alpha() == 0, "Popup window corners must be transparent");
+    QVERIFY(image.pixelColor(image.width()/2, 6).alpha() > 0);
 }
 
 void TestWindow::autopageReflectsSettings()

@@ -18,6 +18,8 @@ public:
     virtual const QVector<Chapter> &chapters() const = 0;
     virtual QString chapterText(int chapterIndex) const = 0;
     virtual qint64 totalCharCount() const = 0;
+    virtual bool isOnline() const { return false; }
+    virtual bool chapterAvailable(int) const { return true; }
     static std::shared_ptr<Book> create(
         const QString &filePath, QString *error = nullptr,
         const QRegularExpression &chapterRegex = QRegularExpression());

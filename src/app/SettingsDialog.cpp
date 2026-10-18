@@ -15,6 +15,7 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QScreen>
+#include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
 #include <QVBoxLayout>
@@ -26,6 +27,7 @@ SettingsDialog::SettingsDialog(Settings *settings, QWidget *parent, int minimumA
     , m_settings(settings)
 {
     setWindowTitle(QStringLiteral("显示设置"));
+    setMinimumWidth(460);
     m_fontCombo = new QFontComboBox(this);
     m_fontCombo->setCurrentFont(m_settings->display.font);
     m_sizeSpin = new QSpinBox(this);
@@ -78,16 +80,28 @@ SettingsDialog::SettingsDialog(Settings *settings, QWidget *parent, int minimumA
     connect(m_textButton, &QPushButton::clicked, this, &SettingsDialog::pickTextColor);
 
     auto *form = new QFormLayout;
+    form->setHorizontalSpacing(20);
+    form->setVerticalSpacing(8);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    const auto section = [this, form](const QString &title) {
+        auto *heading = new QLabel(title, this);
+        heading->setProperty("sectionHeading", true);
+        form->addRow(heading);
+    };
+    section(QStringLiteral("正文排版"));
     form->addRow(QStringLiteral("字体"), m_fontCombo);
     form->addRow(QStringLiteral("字号"), m_sizeSpin);
     form->addRow(QStringLiteral("行距"), m_lineGapSpin);
     form->addRow(QStringLiteral("段距"), m_paragraphGapSpin);
+    form->addRow(QString(), m_firstLineIndent);
     form->addRow(QString(), m_compressBlankLines);
     form->addRow(QString(), m_wordWrap);
     form->addRow(QString(), m_chapterPageBreak);
+    section(QStringLiteral("章节标题"));
     form->addRow(QStringLiteral("章节字体"), m_titleFontCombo);
     form->addRow(QStringLiteral("章节字号"), m_titleSizeSpin);
     form->addRow(QString(), m_useSameFont);
+    section(QStringLiteral("背景与颜色"));
     auto *bgRow = new QHBoxLayout;
     bgRow->addWidget(m_bgImageButton);
     bgRow->addWidget(clearBg);
@@ -97,13 +111,13 @@ SettingsDialog::SettingsDialog(Settings *settings, QWidget *parent, int minimumA
     alphaRow->addWidget(m_alphaLabel);
     form->addRow(QStringLiteral("窗口透明度"), alphaRow);
     form->addRow(QStringLiteral("文字颜色"), m_textButton);
-    form->addRow(QString(), m_firstLineIndent);
     auto *pickScreen = new QPushButton(QStringLiteral("屏幕取色"), this);
     connect(pickScreen, &QPushButton::clicked, this, &SettingsDialog::pickScreenColor);
     form->addRow(QStringLiteral("背景色"), m_bgButton);
     form->addRow(QStringLiteral("取色"), pickScreen);
 
     auto *ok = new QPushButton(QStringLiteral("确定"), this);
+    ok->setDefault(true);
     auto *cancel = new QPushButton(QStringLiteral("取消"), this);
     connect(ok, &QPushButton::clicked, this, &SettingsDialog::accept);
     connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
@@ -113,8 +127,19 @@ SettingsDialog::SettingsDialog(Settings *settings, QWidget *parent, int minimumA
     buttons->addWidget(cancel);
 
     auto *layout = new QVBoxLayout(this);
-    layout->addLayout(form);
+    layout->setContentsMargins(20, 16, 20, 20);
+    layout->setSpacing(16);
+    auto *fields = new QWidget(this);
+    fields->setLayout(form);
+    form->setContentsMargins(0, 0, 8, 0);
+    auto *scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidget(fields);
+    layout->addWidget(scroll);
     layout->addLayout(buttons);
+    const int availableHeight = screen() ? screen()->availableGeometry().height() : 900;
+    resize(520, qMin(820, qMax(360, availableHeight - 120)));
 }
 
 void SettingsDialog::pickBackgroundColor()

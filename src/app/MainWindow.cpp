@@ -1,4 +1,17 @@
 #include "app/MainWindow.h"
+#include "app/UiStyle.h"
+#include "core/NiriClient.h"
+#include "core/online/OnlineComponentManager.h"
+#include "core/online/OnlineEngineBridge.h"
+#include "core/online/OnlineReadingController.h"
+#include "core/online/OnlineBook.h"
+#include "core/online/BookSourceStore.h"
+#include "app/online/OnlineLibraryDialog.h"
+#include "app/online/OnlineComponentDialog.h"
+#include <QShowEvent>
+#include <QHideEvent>
+#include <QLayout>
+#include <QSignalBlocker>
 #include "app/AdvancedSettingsDialog.h"
 #include "app/BasicSettingsDialog.h"
 #include "app/BookmarkDialog.h"
@@ -52,6 +65,50 @@
 
 namespace reader {
 
+class DraggableDialog final : public QDialog
+{
+public:
+    using QDialog::QDialog;
+
+    void enableContentDragging()
+    {
+        installEventFilter(this);
+        for (QLabel *label : findChildren<QLabel *>()) {
+            if (!label->openExternalLinks() && label->textFormat() != Qt::RichText
+                && !(label->textInteractionFlags()
+                     & (Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard)))
+                label->installEventFilter(this);
+        }
+    }
+
+protected:
+    bool eventFilter(QObject *object, QEvent *event) override
+    {
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto *mouse = static_cast<QMouseEvent *>(event);
+            if (mouse->button() == Qt::LeftButton) {
+                // Let Wayland's compositor own the drag; keep a fallback for X11/offscreen.
+                if (windowHandle() && windowHandle()->startSystemMove())
+                    return true;
+                m_dragging = true;
+                m_dragOffset = mouse->globalPosition().toPoint() - pos();
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseMove && m_dragging) {
+            move(static_cast<QMouseEvent *>(event)->globalPosition().toPoint() - m_dragOffset);
+            return true;
+        } else if (event->type() == QEvent::MouseButtonRelease && m_dragging) {
+            m_dragging = false;
+            return true;
+        }
+        return QDialog::eventFilter(object, event);
+    }
+
+private:
+    bool m_dragging = false;
+    QPoint m_dragOffset;
+};
+
 class ResizeGrip final : public QWidget
 {
 public:
@@ -91,8 +148,21 @@ static QString niriKeyFromSequence(const QKeySequence &seq)
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
+    setStyleSheet(readerUiStyle());
     setAttribute(Qt::WA_TranslucentBackground, true);
     QApplication::instance()->installEventFilter(this);
+    m_niriClient = new NiriClient(this);
+    m_progressSaveTimer = new QTimer(this);
+    m_progressSaveTimer->setSingleShot(true);
+    m_progressSaveTimer->setInterval(300);
+    connect(m_progressSaveTimer, &QTimer::timeout, this, &MainWindow::saveProgress);
+    m_niriSettingsTimer = new QTimer(this);
+    m_niriSettingsTimer->setSingleShot(true);
+    m_niriSettingsTimer->setInterval(150);
+    connect(m_niriSettingsTimer, &QTimer::timeout, this, [this] {
+        m_settings.save();
+        syncNiriWindowRule();
+    });
     m_cache.load();
     m_settings.load();
     m_view = new ReadingView(this);
@@ -114,6 +184,11 @@ MainWindow::MainWindow(QWidget *parent)
     m_toc = new QTreeWidget(m_view);
     m_toc->setObjectName(QStringLiteral("tocView"));
     m_toc->setHeaderHidden(true);
+    m_toc->setRootIsDecorated(false);
+    m_toc->setUniformRowHeights(true);
+    m_toc->setAlternatingRowColors(true);
+    m_toc->setTextElideMode(Qt::ElideRight);
+    m_toc->setAccessibleName(QStringLiteral("章节目录"));
     m_toc->hide();
     const auto openChapter = [this](QTreeWidgetItem *item) {
         m_view->goToChapter(item->data(0, Qt::UserRole).toInt());
@@ -128,18 +203,97 @@ MainWindow::MainWindow(QWidget *parent)
     searchBar->setMovable(false);
     m_searchEdit = new QLineEdit(searchBar);
     m_searchEdit->setObjectName(QStringLiteral("searchEdit"));
+    m_searchEdit->setClearButtonEnabled(true);
+    m_searchEdit->setAccessibleName(QStringLiteral("搜索内容"));
+    m_searchEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_searchEdit->installEventFilter(this);
     m_searchEdit->setPlaceholderText(QStringLiteral("搜索（Enter 下一个，Esc 关闭）"));
     searchBar->addWidget(m_searchEdit);
     auto *wholeBook = new QCheckBox(QStringLiteral("全书"), searchBar);
+    wholeBook->setObjectName("searchWholeBook");
     searchBar->addWidget(wholeBook);
+    auto *closeSearch = searchBar->addAction(QStringLiteral("关闭"));
+    closeSearch->setToolTip(QStringLiteral("关闭搜索（Esc）"));
+    connect(closeSearch, &QAction::triggered, this, &MainWindow::closeSearchBar);
     connect(wholeBook, &QCheckBox::toggled, m_view, &ReadingView::setSearchWholeBook);
     searchBar->setVisible(false);
     connect(m_searchEdit, &QLineEdit::returnPressed, this, [this] {
         m_view->findNext(m_searchEdit->text());
     });
 
+    m_onlineRoot = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/online";
+    m_onlineSources = std::make_unique<BookSourceStore>(m_onlineRoot + "/sources.json");
+    QString sourceError;
+    if (!m_onlineSources->load(&sourceError))
+        setProperty("onlineSourceError", sourceError);
+    m_onlineComponent = new OnlineComponentManager(m_onlineRoot + "/component", READER_APP_VERSION,
+                                                  OnlineComponentManager::bundledMetadata(), this);
+    m_onlineBridge = new OnlineEngineBridge(this);
+    m_onlineBridge->setExecutablePath(m_onlineComponent->executablePath());
+    m_onlineController = new OnlineReadingController(m_onlineBridge, this);
+    auto onlineBar = addToolBar(tr("在线章节"));
+    onlineBar->setObjectName("onlineStatusBar");
+    onlineBar->setMovable(false);
+    auto onlineStatus = new QLabel(tr("按章节估算 · 已缓存章节可离线阅读"), onlineBar);
+    onlineStatus->setObjectName("onlineStatus");
+    onlineStatus->setWordWrap(true);
+    onlineBar->addWidget(onlineStatus);
+    auto retry = onlineBar->addAction(tr("重试章节"));
+    retry->setObjectName("retryOnlineChapter");
+    auto cancel = onlineBar->addAction(tr("取消请求"));
+    cancel->setObjectName("cancelOnlineChapter");
+    auto component = onlineBar->addAction(tr("在线组件…"));
+    connect(component, &QAction::triggered, this, &MainWindow::showOnlineComponent);
+    connect(retry, &QAction::triggered, this, [this] {
+        if (m_view->pendingChapter() >= 0) m_view->retryPendingChapter();
+        else requestOnlineChapter(m_view->currentChapter());
+    });
+    connect(cancel, &QAction::triggered, this, [this] {
+        m_onlineController->cancel();
+        if (m_view->pendingChapter() >= 0) m_view->cancelPendingChapter();
+        if (auto label = findChild<QLabel *>("onlineStatus")) label->setText(tr("请求已取消；已缓存章节仍可阅读。"));
+    });
+    connect(m_view, &ReadingView::chapterRequested, this, &MainWindow::requestOnlineChapter);
+    connect(m_view, &ReadingView::chapterRetryRequested, this, &MainWindow::requestOnlineChapter);
+    connect(m_view, &ReadingView::chapterCancelRequested, m_onlineController, &OnlineReadingController::cancel);
+    connect(m_onlineController, &OnlineReadingController::currentReady, this, [this, onlineStatus](int index) {
+        bool restore = index == m_onlineRestoreChapter;
+        if (restore) m_restoringOnline = true;
+        m_view->setChapterReady(index);
+        if (restore) {
+            m_view->goToPage(m_onlineRestorePage);
+            m_view->scrollByPixels(m_onlineRestorePixel);
+            m_onlineRestoreChapter = -1;
+            m_restoringOnline = false;
+        }
+        onlineStatus->setText(tr("按章节估算 · 已缓存章节可离线阅读"));
+        saveProgress();
+    });
+    connect(m_onlineController, &OnlineReadingController::currentError, this, [this, onlineStatus](int index, const QString &error) {
+        m_view->setChapterError(index, error);
+        onlineStatus->setText(tr("获取章节失败：%1。可重试或检查在线组件。").arg(error));
+    });
+    connect(m_onlineController, &OnlineReadingController::chapterRequestStarted, this, [onlineStatus](int) {
+        onlineStatus->setText(tr("按章节估算 · 正在获取章节，可取消"));
+    });
+    connect(m_onlineController, &OnlineReadingController::backgroundStatus, this, [onlineStatus](int completed, int total) {
+        onlineStatus->setText(completed < 0 ? tr("按章节估算 · 后续章节预取失败，可重试")
+                                           : tr("按章节估算 · 后续章节已缓存 %1 / %2").arg(completed).arg(total));
+    });
+    connect(m_onlineComponent, &OnlineComponentManager::stopping, this, [this] {
+        m_onlineController->cancel();
+        m_onlineBridge->stop();
+        if (m_view->pendingChapter() >= 0)
+            m_view->setChapterError(m_view->pendingChapter(), tr("在线组件已停用，请启用后重试。"));
+    });
+    connect(m_onlineComponent, &OnlineComponentManager::changed, this, [this] {
+        m_onlineBridge->setExecutablePath(m_onlineComponent->executablePath());
+    });
+    onlineBar->hide();
     buildMenus();
+    menuBar()->setVisible(!m_settings.menuBarHidden);
+    updateChromeSpacing();
+    setWindowFlag(Qt::FramelessWindowHint, m_settings.menuBarHidden);
     m_dragMenuBar = menuBar();
     m_dragMenuBar->installEventFilter(this);
     updateTitle();
@@ -155,6 +309,32 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::handleRemoteCommand);
     syncGlobalHide();
     applyMouseLeaveHideMode();
+}
+
+MainWindow::~MainWindow()
+{
+    saveProgress();
+    delete m_onlineLibrary;
+    delete m_onlineComponentDialog;
+    delete m_onlineController;
+    m_onlineController = nullptr;
+    delete m_onlineBridge;
+    m_onlineBridge = nullptr;
+}
+
+void MainWindow::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+    m_niriClient->start();
+}
+
+void MainWindow::hideEvent(QHideEvent *event)
+{
+    rememberNiriFloatingPosition();
+    ++m_niriRestoreSerial;
+    finishNiriFloatingPositionRestore();
+    m_niriClient->stop();
+    QMainWindow::hideEvent(event);
 }
 
 void MainWindow::buildMenus()
@@ -256,7 +436,7 @@ void MainWindow::buildMenus()
     about->setObjectName(QStringLiteral("actAbout"));
     connect(about, &QAction::triggered, this, [this] {
         const QUrl projectUrl(QStringLiteral("https://github.com/wz150432/Reader-CachyOS"));
-        QDialog dialog(this);
+        DraggableDialog dialog(this);
         dialog.setObjectName(QStringLiteral("aboutDialog"));
         dialog.setWindowTitle(QStringLiteral("关于 Reader"));
         dialog.setWindowIcon(QIcon(QStringLiteral(":/reader/icon.svg")));
@@ -268,11 +448,11 @@ void MainWindow::buildMenus()
             "QLabel#projectCaption { color: #526b78; font-size: 12px; }"
             "QLabel#projectLink { color: #176487; font-size: 13px; }"
             "QPushButton#projectButton { background: #246b8b; color: white; border: none; "
-            "border-radius: 7px; padding: 9px 16px; font-weight: 600; }"
+            "border-radius: 12px; padding: 9px 16px; font-weight: 600; }"
             "QPushButton#projectButton:hover { background: #185775; }"
             "QPushButton#projectButton:focus { border: 2px solid #83b9d1; }"
             "QPushButton#closeAboutButton { background: #edf3f6; color: #173447; border: none; "
-            "border-radius: 7px; padding: 9px 16px; }"
+            "border-radius: 12px; padding: 9px 16px; }"
             "QPushButton#closeAboutButton:hover { background: #dceaf0; }"
             "QPushButton#closeAboutButton:focus { border: 2px solid #83b9d1; }"));
 
@@ -300,7 +480,7 @@ void MainWindow::buildMenus()
         outer->addLayout(intro);
 
         outer->addSpacing(24);
-        auto *description = new QLabel(QStringLiteral("离线 TXT / EPUB 阅读器，专注本地阅读。"), &dialog);
+        auto *description = new QLabel(QStringLiteral("离线 TXT / EPUB / MOBI / AZW3 / FB2 阅读器，专注本地阅读。"), &dialog);
         description->setStyleSheet(QStringLiteral("color: #284759; font-size: 14px;"));
         outer->addWidget(description);
         outer->addSpacing(24);
@@ -336,6 +516,7 @@ void MainWindow::buildMenus()
         });
         buttons->addWidget(open);
         outer->addLayout(buttons);
+        dialog.enableContentDragging();
         dialog.exec();
     });
     applyKeyset();
@@ -353,22 +534,114 @@ void MainWindow::openBook(const QString &path)
     }
     const auto saved = m_cache.progress(path);
     saveProgress();
+    m_onlineController->close();
+    if (m_progressSaveTimer) m_progressSaveTimer->stop();
+    m_onlineRestoreChapter = -1;
     m_book = std::move(book);
     m_currentPath = path;
     m_currentRecordRemoved = false;
+    auto online = std::dynamic_pointer_cast<OnlineBook>(m_book);
+    m_onlineController->setBook(online);
+    if (!online && !m_onlineLibrary) m_onlineBridge->stop();
+    if (auto bar = findChild<QToolBar *>("onlineStatusBar")) bar->setVisible(bool(online));
+    if (auto wholeBook = findChild<QCheckBox *>("searchWholeBook"))
+        wholeBook->setText(online ? tr("已缓存章节") : tr("全书"));
     m_toc->hide();
-    m_view->setBook(m_book);
-    populateToc();
-    if (saved) {
-        m_view->goToChapter(saved->chapterIndex);
-        m_view->goToPage(saved->pageIndex);
+    // Resolve the central widget geometry before restoring a saved page.
+    ensurePolished();
+    layout()->activate();
+    {
+        const QSignalBlocker blocker(m_view);
+        m_view->setBook(m_book);
+        populateToc();
+        if (saved) {
+            m_view->goToChapter(saved->chapterIndex);
+            m_view->goToPage(saved->pageIndex);
+            if (online && m_view->pendingChapter() >= 0) {
+                m_onlineRestoreChapter = m_view->pendingChapter();
+                m_onlineRestorePage = saved->pageIndex;
+                m_onlineRestorePixel = saved->pixelOffset;
+            } else {
+                m_view->scrollByPixels(saved->pixelOffset);
+            }
+        }
     }
+    onChapterChanged(m_view->currentChapter());
+    if (online) requestOnlineChapter(m_view->pendingChapter() >= 0 ? m_view->pendingChapter() : m_view->currentChapter());
     updateTitle();
     m_view->setFocus();
     m_view->setKeyset(m_settings.keyset);
     applyWindowOpacity();
     refreshOpenMenu();
     // m_leaveHideIgnoreUntil = QDateTime::currentMSecsSinceEpoch() + 1000;
+}
+
+void MainWindow::showOnlineComponent()
+{
+    if (!m_onlineComponentDialog) m_onlineComponentDialog = new OnlineComponentDialog(m_onlineComponent, this);
+    m_onlineComponentDialog->show();
+    m_onlineComponentDialog->raise();
+    m_onlineComponentDialog->activateWindow();
+}
+
+void MainWindow::showOnlineReading()
+{
+    if (!m_onlineComponent->isEnabled()) { showOnlineComponent(); return; }
+    if (!property("onlineSourceError").toString().isEmpty()) {
+        QMessageBox::warning(this, tr("书源配置损坏"), tr("原配置已保留，无法保存。请检查：%1").arg(m_onlineRoot + "/sources.json"));
+    }
+    if (!m_onlineLibrary) {
+        m_onlineLibrary = new OnlineLibraryDialog(m_onlineSources.get(), m_onlineBridge, m_onlineRoot + "/books", this);
+        m_onlineLibrary->setAttribute(Qt::WA_DeleteOnClose);
+        connect(m_onlineLibrary, &OnlineLibraryDialog::openRequested, this, &MainWindow::openBook);
+        connect(m_onlineLibrary, &OnlineLibraryDialog::componentRequested, this, &MainWindow::showOnlineComponent);
+        connect(m_onlineLibrary, &OnlineLibraryDialog::refreshRequested, this, [this](const QString &) { saveProgress(); });
+        connect(m_onlineLibrary, &OnlineLibraryDialog::tocRefreshed, this, &MainWindow::remapOnlineProgress);
+        connect(m_onlineLibrary, &QObject::destroyed, this, [this] {
+            if (m_onlineBridge && (!m_book || !m_book->isOnline())) m_onlineBridge->stop();
+        });
+    }
+    m_onlineLibrary->refreshCached();
+    m_onlineLibrary->show(); m_onlineLibrary->raise(); m_onlineLibrary->activateWindow();
+}
+
+void MainWindow::requestOnlineChapter(int index)
+{
+    if (!m_book || !m_book->isOnline()) return;
+    if (m_onlineRestoreChapter >= 0 && index != m_onlineRestoreChapter) m_onlineRestoreChapter = -1;
+    if (!m_onlineComponent->isEnabled()) {
+        if (!m_book->chapterAvailable(index)) {
+            const auto error = tr("在线组件未启用。请打开“在线组件”安装或启用后重试；缓存章节仍可阅读。");
+            m_view->setChapterError(index, error);
+            if (auto label = findChild<QLabel *>("onlineStatus")) label->setText(error);
+        }
+        return;
+    }
+    m_onlineBridge->setExecutablePath(m_onlineComponent->executablePath());
+    m_onlineController->requestChapter(index);
+}
+
+void MainWindow::remapOnlineProgress(const QString &path,const QStringList &oldUrls,const QStringList &newUrls)
+{
+    auto map = [&](int index) { return index >= 0 && index < oldUrls.size() ? newUrls.indexOf(oldUrls[index]) : -1; };
+    if (auto progress = m_cache.progress(path)) {
+        int index = map(progress->chapterIndex);
+        if (index >= 0) { progress->chapterIndex = index; m_cache.upsertProgress(*progress); }
+    }
+    for (auto bookmark : m_cache.bookmarks(path)) {
+        int index = map(bookmark.chapterIndex);
+        if (index < 0) continue;
+        m_cache.removeBookmark(path, bookmark.created);
+        bookmark.chapterIndex = index;
+        m_cache.addBookmark(bookmark);
+    }
+    m_cache.save();
+    if (m_currentPath == path) {
+        // Persisted indices now address the new TOC. Do not save the old live view again.
+        m_onlineController->close();
+        m_currentRecordRemoved = true;
+        openBook(path);
+    }
 }
 
 void MainWindow::openLastRead()
@@ -387,6 +660,7 @@ void MainWindow::populateToc()
     for (int i = 0; i < chapters.size(); ++i) {
         auto *item = new QTreeWidgetItem(m_toc);
         item->setText(0, chapters.at(i).title);
+        item->setToolTip(0, chapters.at(i).title);
         item->setData(0, Qt::UserRole, i);
     }
 }
@@ -401,7 +675,12 @@ void MainWindow::populateOpenMenu(QMenu *menu)
         none->setEnabled(false);
     } else {
         for (const QString &path : recent) {
-            QAction *item = menu->addAction(QFileInfo(path).completeBaseName());
+            QString label = QFileInfo(path).completeBaseName();
+            if (QFileInfo(path).suffix() == "rnovel") {
+                auto onlineBook = Book::create(path);
+                if (onlineBook) label = onlineBook->title();
+            }
+            QAction *item = menu->addAction(label);
             item->setData(path);
             item->setToolTip(path);
             item->setStatusTip(path);
@@ -414,6 +693,9 @@ void MainWindow::populateOpenMenu(QMenu *menu)
     QAction *newBook = menu->addAction(QStringLiteral("打开新书..."));
     newBook->setObjectName(QStringLiteral("actOpenNew"));
     connect(newBook, &QAction::triggered, this, &MainWindow::chooseNewBook);
+    QAction *online = menu->addAction(tr("在线阅读…"));
+    online->setObjectName("actOnlineReading");
+    connect(online, &QAction::triggered, this, &MainWindow::showOnlineReading);
     QAction *clearRecent = menu->addAction(QStringLiteral("清空(&C)"));
     clearRecent->setObjectName(QStringLiteral("actClearRecent"));
     connect(clearRecent, &QAction::triggered, this, &MainWindow::clearRecentList);
@@ -439,7 +721,7 @@ void MainWindow::chooseNewBook()
 {
     const QString path = QFileDialog::getOpenFileName(
         this, QStringLiteral("打开新书"), QString(),
-        QStringLiteral("书籍文件 (*.txt *.epub *.TXT *.EPUB);;所有文件 (*)"));
+        QStringLiteral("书籍文件 (*.txt *.epub *.mobi *.azw *.azw3 *.fb2 *.TXT *.EPUB *.MOBI *.AZW *.AZW3 *.FB2);;所有文件 (*)"));
     if (!path.isEmpty())
         openBook(path);
 }
@@ -453,12 +735,16 @@ void MainWindow::onChapterChanged(int index)
         m_toc->scrollToItem(item);
     }
     updateTitle();
+    if (m_book->isOnline() && m_view->pendingChapter() < 0 && m_onlineController->targetChapter() != index)
+        requestOnlineChapter(index);
     saveProgress();
 }
 
 void MainWindow::onPageChanged(int)
 {
-    saveProgress();
+    // Cap disk writes during continuous scrolling while bounding the loss window.
+    if (!m_progressSaveTimer->isActive())
+        m_progressSaveTimer->start();
 }
 
 void MainWindow::onSearchRequested()
@@ -506,7 +792,9 @@ void MainWindow::onBookmarkRequested()
 
 void MainWindow::addBookmarkForCurrentBook()
 {
-    if (m_currentPath.isEmpty() || !m_book)
+    // A pending chapter may leave an older committed chapter visible; bookmark
+    // that displayed chapter, and never the default indices of an empty view.
+    if (m_currentPath.isEmpty() || !m_book || !m_view->committedChapterReady())
         return;
     const int ci = m_view->currentChapter();
     QString title;
@@ -550,6 +838,18 @@ void MainWindow::applyKeyset()
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
+    if (auto *menu = qobject_cast<QMenu *>(obj);
+        menu && event->type() == QEvent::Polish) {
+        // Rounded QSS alone leaves an opaque native popup behind its corners.
+        // QWidget::isAncestorOf stops at popup windows, so follow ownership.
+        QObject *owner = menu->parent();
+        while (owner && owner != this)
+            owner = owner->parent();
+        if (owner == this) {
+            menu->setAttribute(Qt::WA_TranslucentBackground);
+            menu->setWindowFlag(Qt::FramelessWindowHint);
+        }
+    }
     if (obj == m_dragMenuBar && event->type() == QEvent::MouseButtonPress) {
         auto *mouse = static_cast<QMouseEvent *>(event);
         if (mouse->button() == Qt::LeftButton
@@ -746,7 +1046,7 @@ void MainWindow::toggleEditMode()
     }
     if (QFileInfo(m_currentPath).suffix().compare(QStringLiteral("txt"), Qt::CaseInsensitive) != 0) {
         QMessageBox::information(this, QStringLiteral("编辑模式"),
-                                 QStringLiteral("编辑模式仅支持 TXT 文件，EPUB 可正常阅读。"));
+                                 QStringLiteral("编辑模式仅支持 TXT 文件，其他格式可正常阅读。"));
         return;
     }
     QFile f(m_currentPath);
@@ -850,10 +1150,12 @@ void MainWindow::updateTitle()
 
 void MainWindow::saveProgress()
 {
-    if (m_currentPath.isEmpty() || m_currentRecordRemoved)
+    if (m_progressSaveTimer) m_progressSaveTimer->stop();
+    if (m_currentPath.isEmpty() || m_currentRecordRemoved || m_restoringOnline || m_onlineRestoreChapter >= 0
+        || !m_view->committedChapterReady() || m_view->pendingChapter() >= 0)
         return;
     m_cache.upsertProgress({m_currentPath, m_view->currentChapter(), m_view->currentPage(),
-                            QDateTime::currentSecsSinceEpoch()});
+                            QDateTime::currentSecsSinceEpoch(), m_view->pixelOffset()});
     m_cache.save();
 }
 
@@ -952,13 +1254,14 @@ void MainWindow::applyWindowState()
 
 void MainWindow::rememberNiriFloatingPosition()
 {
-    const auto window = currentNiriReaderWindow();
-    if (!window)
+    if (m_restoringNiriPosition) return;
+    const auto window = m_niriClient->window();
+    if (!window) return;
+    if (m_settings.hasNiriFloatingPosition && m_settings.niriFloatingPosition == window->position)
         return;
     m_settings.niriFloatingPosition = window->position;
     m_settings.hasNiriFloatingPosition = true;
-    m_settings.save();
-    syncNiriWindowRule();
+    m_niriSettingsTimer->start();
 }
 
 void MainWindow::prepareNiriFloatingPositionRestore()
@@ -976,6 +1279,7 @@ void MainWindow::restoreNiriFloatingPosition()
 {
     if (!m_settings.hasNiriFloatingPosition || qEnvironmentVariableIsEmpty("NIRI_SOCKET"))
         return;
+    m_restoringNiriPosition = true;
     const int serial = ++m_niriRestoreSerial;
     QTimer::singleShot(0, this, [this, serial] {
         tryRestoreNiriFloatingPosition(16, false, serial);
@@ -984,6 +1288,7 @@ void MainWindow::restoreNiriFloatingPosition()
 
 void MainWindow::finishNiriFloatingPositionRestore()
 {
+    m_restoringNiriPosition = false;
     if (!m_positioningWindow)
         return;
     m_positioningWindow = false;
@@ -994,13 +1299,13 @@ void MainWindow::tryRestoreNiriFloatingPosition(int attemptsLeft, bool moveIssue
 {
     if (serial != m_niriRestoreSerial || !isVisible())
         return;
-    const auto window = currentNiriReaderWindow();
+    const auto window = m_niriClient->window();
     if (window && (window->position - m_settings.niriFloatingPosition).manhattanLength() <= 2) {
         finishNiriFloatingPositionRestore();
         return;
     }
     if (window && !moveIssued)
-        moveIssued = moveNiriReaderWindow(window->id, m_settings.niriFloatingPosition);
+        moveIssued = m_niriClient->moveWindow(window->id, m_settings.niriFloatingPosition);
     if (attemptsLeft > 1) {
         QTimer::singleShot(80, this, [this, attemptsLeft, moveIssued, serial] {
             tryRestoreNiriFloatingPosition(attemptsLeft - 1, moveIssued, serial);
@@ -1015,6 +1320,7 @@ void MainWindow::saveWindowState()
     rememberNiriFloatingPosition();
     m_settings.windowGeometry = saveGeometry();
     m_settings.windowState = saveState();
+    m_settings.menuBarHidden = menuBar()->isHidden();
     m_settings.save();
 }
 
@@ -1098,6 +1404,9 @@ void MainWindow::changeEvent(QEvent *event)
     QMainWindow::changeEvent(event);
     if (event->type() == QEvent::WindowStateChange)
         updateResizeGrips();
+    if (m_dragMenuBar && (event->type() == QEvent::FontChange
+                         || event->type() == QEvent::StyleChange))
+        updateChromeSpacing();
 }
 
 void MainWindow::createResizeGrips()
@@ -1166,6 +1475,7 @@ void MainWindow::handleRemoteCommand(const QString &command)
 
 void MainWindow::syncGlobalHide()
 {
+    const int serial = ++m_globalHideSyncSerial;
     m_globalHideBindReady = false;
     const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation))
                             .filePath(QStringLiteral("niri"));
@@ -1178,8 +1488,11 @@ void MainWindow::syncGlobalHide()
     QString patched = content;
     const QString key = niriKeyFromSequence(
         m_settings.keyset.shortcut(KeyAction::HideWindow));
-    if (!reader::patchReaderGlobalHide(&patched, key,
-                                       QCoreApplication::applicationFilePath()))
+    const QString helper = QDir(QCoreApplication::applicationDirPath())
+                               .filePath(QStringLiteral("reader-control"));
+    const QString command = QFileInfo(helper).isExecutable()
+        ? helper : QCoreApplication::applicationFilePath();
+    if (!reader::patchReaderGlobalHide(&patched, key, command))
         return;
     if (patched == content) {
         m_globalHideBindReady = true;
@@ -1191,7 +1504,9 @@ void MainWindow::syncGlobalHide()
     sf.write(patched.toUtf8());
     if (!sf.commit())
         return;
-    m_globalHideBindReady = reloadNiriConfig();
+    m_niriClient->reloadConfig([this, serial](bool success) {
+        if (serial == m_globalHideSyncSerial) m_globalHideBindReady = success;
+    });
 }
 
 void MainWindow::toggleFullscreen()
@@ -1215,16 +1530,29 @@ void MainWindow::toggleAlwaysOnTop()
     show();
 }
 
+void MainWindow::updateChromeSpacing()
+{
+    // Keep the reading viewport unchanged when the menu is hidden, including
+    // startup with a saved hidden menu. The reserved strip stays transparent.
+    menuBar()->ensurePolished();
+    const int reservedHeight = menuBar()->isHidden() ? menuBar()->sizeHint().height() : 0;
+    setContentsMargins(0, reservedHeight, 0, 0);
+    m_view->setTopCornersRounded(menuBar()->isHidden());
+}
+
 void MainWindow::toggleHideBorder()
 {
     if (menuBar()) {
-        const bool hideFrame = menuBar()->isVisible();
+        const bool hideFrame = !menuBar()->isHidden();
         const bool wasVisible = isVisible();
         const bool wasMaximized = isMaximized();
         if (wasVisible)
             rememberNiriFloatingPosition();
         menuBar()->setVisible(!hideFrame);
+        updateChromeSpacing();
         setWindowFlag(Qt::FramelessWindowHint, hideFrame);
+        m_settings.menuBarHidden = hideFrame;
+        m_settings.save();
         if (wasVisible) {
             prepareNiriFloatingPositionRestore();
             if (wasMaximized)
@@ -1298,6 +1626,7 @@ void MainWindow::applyWindowOpacity()
 
 void MainWindow::syncNiriWindowRule()
 {
+    const int serial = ++m_niriRuleSyncSerial;
     m_niriRuleReady = false;
     if (qEnvironmentVariableIsEmpty("NIRI_SOCKET"))
         return;
@@ -1325,7 +1654,9 @@ void MainWindow::syncNiriWindowRule()
     sf.write(patched.toUtf8());
     if (!sf.commit())
         return;
-    m_niriRuleReady = reloadNiriConfig();
+    m_niriClient->reloadConfig([this, serial](bool success) {
+        if (serial == m_niriRuleSyncSerial) m_niriRuleReady = success;
+    });
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

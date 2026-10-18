@@ -13,6 +13,10 @@ Build and test a CachyOS/Arch x86_64 package from the current working tree,
 including uncommitted changes. On success, replace older generated release
 assets in ./release. VERSION defaults to a value derived from Git and today's
 date. This script builds locally; it does not upload to GitHub.
+The optional reader-online archive and metadata are built separately before the
+base package. READER_ONLINE_VERSION defaults to 0.1.0. Set READER_ONLINE_URL only
+to a real official GitHub release asset URL; omission creates local-import-only
+metadata (the base app has no component download configured).
 EOF
 }
 
@@ -27,7 +31,7 @@ if [[ $# -gt 1 ]]; then
     exit 2
 fi
 
-for tool in makepkg cmake ctest tar sha256sum; do
+for tool in makepkg cmake ctest tar sha256sum python3 readelf ldd; do
     command -v "$tool" >/dev/null || { echo "Required command not found: $tool" >&2; exit 1; }
 done
 
@@ -53,11 +57,32 @@ WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/reader-release.XXXXXX")"
 cleanup() { rm -rf -- "$WORK_DIR"; }
 trap cleanup EXIT
 
+ONLINE_VERSION="${READER_ONLINE_VERSION:-0.1.0}"
+APP_VERSION="$(sed -nE 's/^project\(ReaderCachyOS VERSION ([0-9.]+).*/\1/p' "$ROOT/CMakeLists.txt")"
+ONLINE_STEM="reader-online-$ONLINE_VERSION-linux-x86_64"
+echo "Building independent online component $ONLINE_VERSION"
+cmake -S "$ROOT" -B "$WORK_DIR/component-build" -DCMAKE_BUILD_TYPE=Release \
+    -DREADER_BUILD_ONLINE_ENGINE=ON -DREADER_ONLINE_VERSION="$ONLINE_VERSION"
+cmake --build "$WORK_DIR/component-build" --target reader reader-online tst_onlineengine tst_onlineartifact -j4
+QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=none \
+    ctest --test-dir "$WORK_DIR/component-build" -R '^onlineengine$' --output-on-failure
+python3 "$ROOT/packaging/build-online-component.py" \
+    --engine "$WORK_DIR/component-build/reader-online" --base "$WORK_DIR/component-build/reader" \
+    --version "$ONLINE_VERSION" --app-version "$APP_VERSION" \
+    --output-dir "$WORK_DIR" --url "${READER_ONLINE_URL:-}"
+READER_ONLINE_ARCHIVE="$WORK_DIR/$ONLINE_STEM.tar.gz" \
+READER_ONLINE_MANIFEST="$WORK_DIR/$ONLINE_STEM.json" \
+    "$WORK_DIR/component-build/tst_onlineartifact"
+python3 -m unittest discover -s "$ROOT/tests" -p test_online_packaging.py
+cp "$WORK_DIR/$ONLINE_STEM.json" "$WORK_DIR/online-component.json"
+METADATA_HASH="$(sha256sum "$WORK_DIR/online-component.json" | cut -d' ' -f1)"
+
 echo "Creating source snapshot from $ROOT"
 tar -C "$ROOT" \
     --exclude='./.git' --exclude='./build' --exclude='./build-*' \
     --exclude='./release' --exclude='./packaging/pkg' --exclude='./packaging/src' \
-    --exclude='./packaging/reader-cachyos-git' --exclude='./graft' \
+    --exclude='./packaging/reader-cachyos-git' --exclude='./graft' --exclude='./.superpowers' \
+    --exclude='__pycache__' \
     -czf "$WORK_DIR/reader-source.tar.gz" .
 cp "$ROOT/packaging/reader.install" "$WORK_DIR/reader.install"
 SOURCE_HASH="$(sha256sum "$WORK_DIR/reader-source.tar.gz" | cut -d' ' -f1)"
@@ -67,30 +92,37 @@ cat > "$WORK_DIR/PKGBUILD" <<EOF
 pkgname=$PKG_NAME
 pkgver=$VERSION
 pkgrel=1
-pkgdesc='Offline TXT/EPUB reader for CachyOS/Arch'
+pkgdesc='Offline TXT/EPUB/MOBI/AZW3/FB2 reader for CachyOS/Arch'
 arch=('x86_64')
 url='https://github.com/wz150432/Reader-CachyOS'
 license=('custom')
-depends=('qt6-base' 'libarchive')
+depends=('qt6-base' 'libarchive' 'zlib')
 makedepends=('cmake')
 conflicts=('reader')
 provides=('reader')
 install=reader.install
-source=('reader-source.tar.gz' 'reader.install')
-sha256sums=('$SOURCE_HASH' '$INSTALL_HASH')
+source=('reader-source.tar.gz' 'reader.install' 'online-component.json')
+sha256sums=('$SOURCE_HASH' '$INSTALL_HASH' '$METADATA_HASH')
 options=('!debug')
 
 build() {
     cmake -S "\$srcdir" -B "\$srcdir/build" \\
-        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \\
+        -DREADER_BUILD_ONLINE_ENGINE=OFF -DREADER_ONLINE_METADATA="\$srcdir/online-component.json"
     cmake --build "\$srcdir/build" -j4
 }
 
 check() {
-    ctest --test-dir "\$srcdir/build" --output-on-failure
+    READER_ONLINE_ARCHIVE="\$srcdir/../$ONLINE_STEM.tar.gz" \\
+    READER_ONLINE_MANIFEST="\$srcdir/online-component.json" READER_EXPECT_BUNDLED_METADATA=1 \\
+    QT_QPA_PLATFORM=offscreen QT_QPA_PLATFORMTHEME=none ctest --test-dir "\$srcdir/build" --output-on-failure
 }
 
 package() {
+    install -Dm755 "\$srcdir/build/lib/reader/libreader_mobi.so" "\$pkgdir/usr/lib/reader/libreader_mobi.so"
+    install -Dm644 "\$srcdir/third_party/libmobi/COPYING" "\$pkgdir/usr/share/licenses/reader/libmobi-LGPL-3.0.txt"
+    install -Dm644 "\$srcdir/third_party/libmobi/COPYING.GPL" "\$pkgdir/usr/share/licenses/reader/libmobi-GPL-3.0.txt"
+    install -Dm755 "\$srcdir/build/reader-control" "\$pkgdir/usr/bin/reader-control"
     install -Dm755 "\$srcdir/build/reader" "\$pkgdir/usr/bin/reader"
     install -Dm644 "\$srcdir/packaging/reader.desktop" \\
         "\$pkgdir/usr/share/applications/reader.desktop"
@@ -113,6 +145,8 @@ fi
 cp "$WORK_DIR/reader-source.tar.gz" "$RELEASE_DIR/reader-source.tar.gz.new"
 cp "$PACKAGE_FILE" "$RELEASE_DIR/$PKG_NAME-$VERSION-1-x86_64.pkg.tar.zst.new"
 cp "$WORK_DIR/build.log" "$RELEASE_DIR/build.log.new"
+cp "$WORK_DIR/$ONLINE_STEM.tar.gz" "$RELEASE_DIR/$ONLINE_STEM.tar.gz.new"
+cp "$WORK_DIR/$ONLINE_STEM.json" "$RELEASE_DIR/$ONLINE_STEM.json.new"
 cat > "$RELEASE_DIR/RELEASE-NOTES.md.new" <<'EOF'
 # Reader CachyOS @VERSION@
 
@@ -134,12 +168,19 @@ sudo pacman -R @PKG_NAME@
 ```
 
 卸载会保留个人设置、阅读记录、书签和本地书籍。
+
+## 可选在线阅读组件
+
+基础安装包不包含在线解析器。启动后在“文件 → 在线阅读”中明确安装/导入组件。
+独立的 `reader-online-*.tar.gz` 和同名 `.json` 可在组件对话框中本地导入。
+未设置真实官方发布 URL 的构建显示“未配置组件下载”；可继续本地导入。
+远程一键安装需维护者先发布真实附件并在构建时设置 READER_ONLINE_URL。
 EOF
 sed -i "s/@VERSION@/$VERSION/g; s/@PKG_NAME@/$PKG_NAME/g" "$RELEASE_DIR/RELEASE-NOTES.md.new"
 
 (
     cd "$WORK_DIR"
-    sha256sum "$PKG_NAME-$VERSION-1-x86_64.pkg.tar.zst" reader-source.tar.gz > "$RELEASE_DIR/SHA256SUMS.new"
+    sha256sum "$PKG_NAME-$VERSION-1-x86_64.pkg.tar.zst" reader-source.tar.gz "$ONLINE_STEM.tar.gz" "$ONLINE_STEM.json" > "$RELEASE_DIR/SHA256SUMS.new"
 )
 
 # Replace stale generated release assets only after the new build and tests succeed.
@@ -152,6 +193,8 @@ mv "$RELEASE_DIR/$PKG_NAME-$VERSION-1-x86_64.pkg.tar.zst.new" "$RELEASE_DIR/$PKG
 mv "$RELEASE_DIR/build.log.new" "$RELEASE_DIR/build.log"
 mv "$RELEASE_DIR/RELEASE-NOTES.md.new" "$RELEASE_DIR/RELEASE-NOTES.md"
 mv "$RELEASE_DIR/SHA256SUMS.new" "$RELEASE_DIR/SHA256SUMS"
+mv "$RELEASE_DIR/$ONLINE_STEM.tar.gz.new" "$RELEASE_DIR/$ONLINE_STEM.tar.gz"
+mv "$RELEASE_DIR/$ONLINE_STEM.json.new" "$RELEASE_DIR/$ONLINE_STEM.json"
 
 echo "Release package ready in: $RELEASE_DIR"
-echo "Upload the .pkg.tar.zst, reader-source.tar.gz, and SHA256SUMS files to GitHub Releases."
+echo "Local assets include the base package, source, optional component archive/JSON and SHA256SUMS. Nothing was uploaded."

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+<description><title-info><book-title>测试书</book-title><annotation><p>不属于正文</p></annotation></title-info></description>
+<body><section><title><p>第一章</p></title><p>甲<emphasis>乙</emphasis> &amp; 丙</p>
+<section><title><p>第二节</p></title><p>后续正文</p></section></section></body>
+<binary id="cover">AAAA</binary></FictionBook>

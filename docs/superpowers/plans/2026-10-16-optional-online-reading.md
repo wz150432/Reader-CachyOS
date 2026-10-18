@@ -108,7 +108,7 @@ QVERIFY(QFileInfo::exists(savedChapterPath)); // after uninstall
 
   MainWindow owns manager/store/bridge/controller lifetime; “在线阅读” file-menu action; online book manifest uses existing openBook/recent/bookmarks. Bind controller to view missing/ready/error and current chapter, suppress progress saves until real content committed, restore saved chapter/page/pixel only after ready. Source deletion/edit doesn't invalidate existing source snapshot. Online cannot enter TXT edit; progress label says “按章节估算”, search says “已缓存章节”. Component disabled/missing cached book shows explicit enable instruction. Stop helper when no library/online session remains. Register all widget sources on reader and existing MainWindow test targets via CMake helper.
 
-- [ ] **Step 4: Run installer, dialog and MainWindow tests plus full CTest.** Verify default base OFF never finds LibXml2 and runtime has no dependency on it. Use offscreen widgets tests and capture representative forms/installation/loading/error screenshots. Record exact manager/metadata APIs for packaging.
+- [ ] **Step 4: Run installer, dialog and MainWindow tests plus full CTest.** Verify default base OFF never finds LibXml2 and does not add direct runtime linkage to it (existing libarchive transitive dependencies are baseline). Use offscreen widgets tests and capture representative forms/installation/loading/error screenshots. Record exact manager/metadata APIs for packaging.
 - [ ] **Step 5: Self-review, commit new files only or feature-only isolated patches.** Preserve pre-existing edits. Report actual UI route, tests and any limitations.
 
 ### Task 4: Standalone artifacts, integration validation and docs

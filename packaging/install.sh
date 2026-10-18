@@ -71,15 +71,48 @@ run_install_file()
     local target="$2"
     local source="$3"
     if [[ "$mode" == "user" ]]; then
-        install -Dm755 "$source" "$target"
+        install -Dm755 "$source" "$target.new"
+        mv -f "$target.new" "$target"
     else
-        "${SUDO[@]}" install -Dm755 "$source" "$target"
+        "${SUDO[@]}" install -Dm755 "$source" "$target.new"
+        "${SUDO[@]}" mv -f "$target.new" "$target"
     fi
 }
 
 echo "Installing Reader into $PREFIX"
+CONTROL_BINARY="$(dirname "$BINARY")/reader-control"
+if [[ ! -x "$CONTROL_BINARY" ]]; then
+    echo "Reader control helper not found: $CONTROL_BINARY" >&2
+    exit 1
+fi
+LIBRARY="$(dirname "$BINARY")/lib/reader/libreader_mobi.so"
+if [[ ! -f "$LIBRARY" ]]; then
+    echo "Reader library not found: $LIBRARY" >&2
+    exit 1
+fi
+run_install_file "$MODE" "$PREFIX/lib/reader/libreader_mobi.so" "$LIBRARY"
+run_install "$MODE" "$PREFIX/share/licenses/reader/libmobi-LGPL-3.0.txt" "$ROOT/third_party/libmobi/COPYING"
+run_install "$MODE" "$PREFIX/share/licenses/reader/libmobi-GPL-3.0.txt" "$ROOT/third_party/libmobi/COPYING.GPL"
+run_install_file "$MODE" "$PREFIX/bin/reader-control" "$CONTROL_BINARY"
 run_install_file "$MODE" "$PREFIX/bin/reader" "$BINARY"
-run_install "$MODE" "$APPS_DIR/reader.desktop" "$ROOT/packaging/reader.desktop"
+# Pin the menu entry to this installation even when an older reader is on PATH.
+DESKTOP_ENTRY="$(mktemp)"
+trap 'rm -f -- "$DESKTOP_ENTRY"' EXIT
+EXEC_PATH="$(realpath -m "$PREFIX/bin/reader")"
+EXEC_PATH="${EXEC_PATH//\\/\\\\}"
+EXEC_PATH="${EXEC_PATH//\"/\\\"}"
+EXEC_PATH="${EXEC_PATH//\$/\\\$}"
+EXEC_PATH="${EXEC_PATH//\`/\\\`}"
+# Desktop-entry string escaping is applied before Exec argument parsing.
+EXEC_PATH="${EXEC_PATH//\\/\\\\}"
+while IFS= read -r line; do
+    if [[ "$line" == Exec=* ]]; then
+        printf 'Exec="%s" %%F\n' "$EXEC_PATH"
+    else
+        printf '%s\n' "$line"
+    fi
+done < "$ROOT/packaging/reader.desktop" > "$DESKTOP_ENTRY"
+run_install "$MODE" "$APPS_DIR/reader.desktop" "$DESKTOP_ENTRY"
 run_install "$MODE" "$ICON_DIR/reader.svg" "$ROOT/packaging/reader.svg"
 run_install "$MODE" "$MIME_DIR/reader.xml" "$ROOT/packaging/reader-mime.xml"
 
@@ -104,7 +137,7 @@ if command -v update-mime-database >/dev/null 2>&1; then
 fi
 
 if command -v xdg-mime >/dev/null 2>&1; then
-    xdg-mime default reader.desktop text/plain application/epub+zip application/x-mobipocket-ebook
+    xdg-mime default reader.desktop text/plain application/epub+zip application/x-mobipocket-ebook application/vnd.amazon.mobi8-ebook application/x-fictionbook+xml
 fi
 
-echo "Done. Reader is now the default app for txt/epub/mobi."
+echo "Done. Reader is now the default app for txt/epub/mobi/azw3/fb2."

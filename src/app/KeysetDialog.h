@@ -13,13 +13,13 @@ public:
     explicit KeysetDialog(Settings *settings, QWidget *parent = nullptr);
 
 private slots:
-    void editShortcut();
     void restoreDefaults();
     void accept() override;
 
 private:
     void reload();
     Settings *m_settings;
+    Keyset m_keyset;
     QTableWidget *m_table;
 };
 

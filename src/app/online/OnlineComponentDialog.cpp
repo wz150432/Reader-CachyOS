@@ -13,16 +13,16 @@
 namespace reader {
 OnlineComponentDialog::OnlineComponentDialog(OnlineComponentManager *m,
                                              QWidget *p)
-    : QDialog(p), m_manager(m) {
+    : MenuPanel(p), m_manager(m) {
   setWindowTitle(tr("在线阅读组件"));
   setObjectName("onlineComponentDialog");
   setStyleSheet(readerUiStyle());
-  resize(580, 330);
+  resize(420, 200);
   setAttribute(Qt::WA_DeleteOnClose, false);
   auto layout = new QVBoxLayout(this);
-  layout->setContentsMargins(24, 20, 24, 20);
-  layout->setSpacing(14);
-  auto title = new QLabel(tr("添加在线搜索与按章阅读"), this);
+  layout->setContentsMargins(16, 14, 16, 14);
+  layout->setSpacing(8);
+  auto title = new QLabel(tr("安装在线阅读组件"), this);
   title->setProperty("sectionHeading", true);
   layout->addWidget(title);
   m_details = new QLabel(this);
@@ -38,11 +38,11 @@ OnlineComponentDialog::OnlineComponentDialog(OnlineComponentManager *m,
   layout->addWidget(m_progress);
   auto row = new QHBoxLayout;
   layout->addLayout(row);
-  m_download = new QPushButton(tr("下载并启用"), this);
+  m_download = new QPushButton(tr("安装"), this);
   m_download->setObjectName("downloadComponent");
   m_download->setDefault(true);
   row->addWidget(m_download);
-  m_import = new QPushButton(tr("导入本地组件…"), this);
+  m_import = new QPushButton(tr("本地安装…"), this);
   m_import->setObjectName("importComponent");
   row->addWidget(m_import);
   row->addStretch();
@@ -71,8 +71,12 @@ OnlineComponentDialog::OnlineComponentDialog(OnlineComponentManager *m,
           &OnlineComponentDialog::importLocal);
   connect(m_enable, &QPushButton::clicked, this, [this] {
     QString e;
-    if (!m_manager->setEnabled(!m_manager->isEnabled(), &e))
+    if (!m_manager->setEnabled(!m_manager->isEnabled(), &e)) {
       m_status->setText(e);
+    } else if (m_manager->isEnabled()) {
+      accept();
+      emit ready();
+    }
   });
   connect(m_uninstall, &QPushButton::clicked, this, [this] {
     if (QMessageBox::question(
@@ -95,21 +99,24 @@ OnlineComponentDialog::OnlineComponentDialog(OnlineComponentManager *m,
           });
   connect(m, &OnlineComponentManager::finished, this,
           [this](bool ok, const QString &error) {
-            m_status->setText(ok ? tr("组件已启用，可以返回在线阅读。")
-                                 : error);
+            m_status->setText(ok ? QString() : error);
             refresh();
+            if (ok) {
+              accept();
+              emit ready();
+            }
           });
   refresh();
 }
 void OnlineComponentDialog::refresh() {
   bool busy = m_manager->isBusy(), installed = m_manager->isInstalled();
   auto j = installed ? m_manager->installedMetadata() : m_manager->metadata();
-  m_details->setText(
-      tr("版本：%1\n下载大小：%2 KiB；展开：%3 KiB\n来源：%4\n安装位置：%5")
-          .arg(j["version"].toString(tr("未提供")))
-          .arg(j["size"].toInteger() / 1024)
-          .arg(j["unpackedSize"].toInteger() / 1024)
-          .arg(j["url"].toString(tr("未配置组件下载")), m_manager->rootPath()));
+  m_details->setText(tr("版本 %1 · 下载 %2 KiB")
+      .arg(j["version"].toString(tr("未提供")))
+      .arg(j["size"].toInteger() / 1024));
+  m_details->setToolTip(tr("来源：%1\n安装位置：%2")
+      .arg(j["url"].toString(), m_manager->rootPath()));
+  m_download->setVisible(!installed);
   m_download->setEnabled(!busy && m_manager->downloadAvailable());
   m_import->setEnabled(!busy);
   m_enable->setVisible(installed);
@@ -126,8 +133,9 @@ void OnlineComponentDialog::refresh() {
     m_status->setText(
         installed ? (m_manager->isEnabled() ? tr("已启用")
                                             : tr("已停用；缓存章节仍可阅读"))
-                  : tr("未配置组件下载时，请选择本地压缩包及对应元数据。仅在您"
-                       "点击下载或确认导入后安装。"));
+                  : m_manager->downloadAvailable()
+                      ? tr("点击安装后即可搜索和阅读在线书籍。")
+                      : tr("暂无下载地址，可选择本地组件安装。"));
 }
 void OnlineComponentDialog::importLocal() {
   QString meta = QFileDialog::getOpenFileName(this, tr("选择官方组件元数据"),

@@ -30,6 +30,7 @@ public:
     bool isAutoPaging() const { return m_autoPageEnabled; }
     void toggleAutoPage();
     int pendingChapter() const { return m_pendingChapter; }
+    int pendingPage() const { return m_pendingPage; }
     bool committedChapterReady() const { return m_committedReady; }
     void setChapterReady(int index);
     void setChapterError(int index, const QString &error);

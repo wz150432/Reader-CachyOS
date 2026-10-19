@@ -49,6 +49,31 @@ class EngineTest : public QObject {
             {"intervalMs", 500}};
   }
 private slots:
+  void paginationSurvivesNavigationCleanup() {
+    auto src = source();
+    src["removeXPath"] = "//footer";
+    auto response = call({{"op", "chapter"}, {"source", src},
+                          {"url", base + "/nav-first"}});
+    QVERIFY(response["ok"].toBool());
+    QCOMPARE(response["result"].toObject()["text"].toString(),
+             QStringLiteral("Body text\n\nSecond page"));
+  }
+  void browserSessionCookiesAreKeptAndIsolatedBySource() {
+    auto src = source();
+    src["id"] = "cookie-session-a";
+    src["cookie"] = "manual=kept; other=also-kept";
+    auto bootstrap = call({{"op", "toc"}, {"source", src}, {"url", base + "/cookie-bootstrap"}});
+    QVERIFY2(bootstrap["ok"].toBool(), qPrintable(bootstrap["error"].toString()));
+    auto chapter = call({{"op", "chapter"}, {"source", src}, {"url", base + "/cookie-required"}});
+    QVERIFY(chapter["ok"].toBool());
+    QVERIFY(lastRequest.contains("reader_session=ready"));
+    QVERIFY(lastRequest.contains("manual=kept"));
+    QVERIFY(lastRequest.contains("other=also-kept"));
+    src["id"] = "cookie-session-b";
+    auto isolated = call({{"op", "chapter"}, {"source", src}, {"url", base + "/cookie-required"}});
+    QCOMPARE(isolated["error"].toString(), QStringLiteral("HTTP 403"));
+    QVERIFY(!lastRequest.contains("reader_session=ready"));
+  }
   void validateRulesWithoutNetwork() {
     auto valid = source();
     auto good = call({{"op", "validate"}, {"source",valid}});
@@ -71,7 +96,19 @@ private slots:
           QByteArray charset = "utf-8";
           QByteArray body;
           int status = 200;
-          if (path.startsWith("/pages/")) {
+          if (path == "/cookie-bootstrap" && !req.contains("reader_session=ready")) {
+            body = "<html><div></div></html><script> window.location.href =\"/cookie-bootstrap\"; </script>";
+            s->write("HTTP/1.1 403 Forbidden\r\nSet-Cookie: reader_session=ready; Path=/; HttpOnly\r\nContent-Type: text/html\r\nContent-Length: " +
+                     QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+            s->disconnectFromHost();
+            return;
+          }
+          if (path == "/cookie-required" && !req.contains("reader_session=ready")) {
+            status = 403;
+            body = "Forbidden";
+          } else if (path == "/cookie-bootstrap") {
+            body = fixture("toc-1.html");
+          } else if (path.startsWith("/pages/")) {
             int page = path.mid(7).toInt();
             body = "<a class='chapter' href='/chapter/" + QByteArray::number(page) + "'>Chapter</a>";
             if (page < 24)
@@ -94,6 +131,11 @@ private slots:
                      "/c1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
             s->disconnectFromHost();
             return;
+          } else if (path == "/nav-first") {
+            body = "<article><p>Body text</p><nav><a rel='next' href='/nav-second'>Next</a></nav>"
+                   "<footer>Site footer</footer></article>";
+          } else if (path == "/nav-second") {
+            body = "<article>Second page</article>";
           } else if (path == "/gb") {
             charset = "gb18030";
             body = QByteArray("<article>") + QByteArray::fromHex("bcd7d2d2") +

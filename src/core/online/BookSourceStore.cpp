@@ -10,7 +10,7 @@ namespace reader {
 bool BookSourceStore::load(QString *error) {
   QFile f(m_path);
   if (!f.exists()) {
-    m_sources = {BookSource::preset()};
+    m_sources = BookSource::presets();
     m_corrupt = false;
     return true;
   }
@@ -26,8 +26,9 @@ bool BookSourceStore::load(QString *error) {
   auto d = QJsonDocument::fromJson(f.readAll(), &e);
   if (e.error != QJsonParseError::NoError || !d.isArray())
     return fail();
-  QVector<BookSource> result{BookSource::preset()};
+  QVector<BookSource> result = BookSource::presets();
   QSet<QString> ids;
+  QVector<BookSource> stored;
   for (auto v : d.array()) {
     if (!v.isObject())
       return fail();
@@ -35,8 +36,25 @@ bool BookSourceStore::load(QString *error) {
     if (!s.validate() || ids.contains(s.id()))
       return fail();
     ids.insert(s.id());
-    if (s.id() != BookSource::preset().id())
+    stored.append(s);
+  }
+  for (const auto &s : result)
+    ids.insert(s.id());
+  for (const auto &s : stored) {
+    if (!BookSource::isPreset(s.id())) {
       result.append(s);
+      continue;
+    }
+    // These two IDs were reserved before builtin records carried a marker.
+    if (s.toJson().value("builtin").toBool() ||
+        s.id() == "wikisource-zh" || s.id() == "bbbiquge")
+      continue;
+    const QString base = "user-" + s.id().left(110);
+    QString migrated = base;
+    for (int suffix = 2; ids.contains(migrated); ++suffix)
+      migrated = base + "-" + QString::number(suffix);
+    ids.insert(migrated);
+    result.append(s.copy(migrated, s.toJson().value("name").toString()));
   }
   m_sources = result;
   m_corrupt = false;
@@ -70,7 +88,7 @@ bool BookSourceStore::save(QString *error) {
   return true;
 }
 bool BookSourceStore::upsert(const BookSource &s, QString *error) {
-  if (s.id() == BookSource::preset().id()) {
+  if (BookSource::isPreset(s.id())) {
     if (error)
       *error = "Preset is immutable";
     return false;
@@ -86,7 +104,7 @@ bool BookSourceStore::upsert(const BookSource &s, QString *error) {
   return true;
 }
 bool BookSourceStore::remove(const QString &id, QString *error) {
-  if (id == BookSource::preset().id()) {
+  if (BookSource::isPreset(id)) {
     if (error)
       *error = "Preset is immutable";
     return false;

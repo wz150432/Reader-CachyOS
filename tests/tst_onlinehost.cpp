@@ -1,12 +1,73 @@
 #include "core/online/BookSourceStore.h"
 #include "core/online/OnlineBook.h"
 #include <QFile>
+#include <QJsonDocument>
+#include <QSet>
 #include <QTemporaryDir>
 #include <QtTest>
 using namespace reader;
 class HostTest : public QObject {
   Q_OBJECT
 private slots:
+  void upgradingPreservesCustomSourceWithNewBuiltinId() {
+    QTemporaryDir dir;
+    const QString path = dir.filePath("sources.json");
+    auto custom = BookSource::preset().copy("biquge365", "My source").toJson();
+    custom["cookie"] = "session=private";
+    custom["enabled"] = false;
+    custom["baseUrl"] = "https://example.org";
+    auto occupied = BookSource(custom).copy("user-biquge365", "Existing copy");
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write(QJsonDocument(QJsonArray{custom, occupied.toJson()}).toJson());
+    file.close();
+    BookSourceStore store(path);
+    QVERIFY(store.load());
+    QCOMPARE(store.sources().size(), BookSource::presets().size() + 2);
+    QString migratedId;
+    for (const auto &source : store.sources()) {
+      if (source.toJson()["name"].toString() != "My source")
+        continue;
+      migratedId = source.id();
+      QVERIFY(!BookSource::isPreset(migratedId));
+      QVERIFY(migratedId != occupied.id());
+      auto expected = custom;
+      expected["id"] = migratedId;
+      QCOMPARE(source.toJson(), expected);
+      QVERIFY(store.upsert(source));
+    }
+    QVERIFY(!migratedId.isEmpty());
+    QVERIFY(store.save());
+    BookSourceStore reopened(path);
+    QVERIFY(reopened.load());
+    QCOMPARE(reopened.sources().size(), store.sources().size());
+    QVERIFY(reopened.remove(migratedId));
+  }
+
+  void bundledSourcesLoadAlongsideExistingSettings() {
+    QTemporaryDir dir;
+    QString path = dir.filePath("sources.json");
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write(QJsonDocument(QJsonArray{BookSource::preset().toJson()}).toJson());
+    file.close();
+    BookSourceStore store(path);
+    QVERIFY(store.load());
+    QSet<QString> missing{"bbbiquge", "biquge5200", "biquhua", "biquche", "biquge365"};
+    for (const auto &source : store.sources()) {
+      QVERIFY(source.validate());
+      if (missing.remove(source.id())) {
+        QVERIFY(!source.toJson()["searchUrl"].toString().isEmpty());
+        QVERIFY(!store.remove(source.id()));
+      }
+    }
+    QVERIFY2(missing.isEmpty(), qPrintable(QStringList(missing.values()).join(", ")));
+    QVERIFY(store.save());
+    BookSourceStore reopened(path);
+    QVERIFY(reopened.load());
+    QCOMPARE(reopened.sources().size(), store.sources().size());
+  }
+
   void sourceValidationAndPrivateWrites() {
     QTemporaryDir dir;
     auto preset = BookSource::preset();
@@ -29,7 +90,7 @@ private slots:
              QFileDevice::Permissions());
     BookSourceStore reopened(dir.filePath("sources.json"));
     QVERIFY(reopened.load(&error));
-    QCOMPARE(reopened.sources().size(), 2);
+    QCOMPARE(reopened.sources().size(), BookSource::presets().size() + 1);
   }
   void oversizedSourceSavePreservesExistingStore() {
     QTemporaryDir d;
@@ -42,7 +103,7 @@ private slots:
     QVERIFY(!store.save());
     BookSourceStore reopened(d.filePath("sources.json"));
     QVERIFY(reopened.load());
-    QCOMPARE(reopened.sources().size(), 1);
+    QCOMPARE(reopened.sources().size(), BookSource::presets().size());
   }
   void oversizedWritesPreserveReadableCache() {
     QTemporaryDir d;
@@ -53,6 +114,12 @@ private slots:
         d.path(), source, "https://example.org/book", "Book", chapters);
     QVERIFY(b);
     QVERIFY(b->saveChapter(0, "original"));
+    QVERIFY(!b->refreshManifest("Invalid", QJsonArray{QJsonObject{
+        {"title", "Bad"}, {"url", "file:///tmp/unsafe"}}}));
+    QVERIFY(!b->refreshManifest(QString(9 * 1024 * 1024, 'x'), chapters));
+    auto original = Book::create(b->filePath());
+    QVERIFY(original);
+    QCOMPARE(original->chapterText(0), QString("original"));
     QVERIFY(!b->saveChapter(0, QString(3 * 1024 * 1024, QChar(0))));
     QCOMPARE(b->chapterText(0), QString("original"));
     QVERIFY(!OnlineBook::createManifest(

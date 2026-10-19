@@ -7,6 +7,7 @@
 #include "core/online/OnlineEngineBridge.h"
 #include <QComboBox>
 #include <QDir>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
@@ -20,7 +21,168 @@ using namespace reader;
 class DialogTest : public QObject {
   Q_OBJECT
 
+private:
+  bool selectBook(OnlineLibraryDialog &dialog, const QString &keyword) {
+    dialog.findChild<QLineEdit *>("onlineKeyword")->setText(keyword);
+    dialog.findChild<QPushButton *>("searchOnline")->click();
+    auto results = dialog.findChild<QListWidget *>("onlineResults");
+    if (!QTest::qWaitFor([&] { return results->count() > 0; }, 2000))
+      return false;
+    return QMetaObject::invokeMethod(results, "itemActivated", Qt::DirectConnection,
+        Q_ARG(QListWidgetItem *, results->currentItem()));
+  }
 private slots:
+  void allSourcesPreserveOriginAndIsolateFailures() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.filePath("sources.json"));
+    QVERIFY(store.load());
+    auto a = BookSource::preset().copy("aggregate-a", "Source A");
+    auto b = BookSource::preset().copy("aggregate-b", "Source B");
+    auto failed = BookSource::preset().copy("aggregate-error", "Broken").toJson();
+    failed["fixtureError"] = "HTTP 503";
+    auto disabled = BookSource::preset().copy("aggregate-disabled", "Disabled").toJson();
+    disabled["enabled"] = false;
+    QVERIFY(store.upsert(a));
+    QVERIFY(store.upsert(b));
+    QVERIFY(store.upsert(BookSource(failed)));
+    QVERIFY(store.upsert(BookSource(disabled)));
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+    OnlineLibraryDialog dialog(&store, &bridge, dir.filePath("books"));
+    auto sources = dialog.findChild<QComboBox *>("librarySources");
+    QCOMPARE(sources->currentText(), QStringLiteral("全部书源"));
+    dialog.show();
+    dialog.findChild<QLineEdit *>("onlineKeyword")->setText("federated");
+    auto search = dialog.findChild<QPushButton *>("searchOnline");
+    search->click();
+    auto results = dialog.findChild<QListWidget *>("onlineResults");
+    QTRY_COMPARE(search->text(), QStringLiteral("搜索"));
+    QCOMPARE(results->count(), BookSource::presets().size() + 2);
+    QVERIFY(dialog.findChild<QLabel *>("libraryStatus")->text().contains("1"));
+    int row = -1;
+    for (int i = 0; i < results->count(); ++i) {
+      QVERIFY(!results->item(i)->toolTip().contains("Disabled"));
+      if (results->item(i)->toolTip().contains("Source B")) row = i;
+    }
+    QVERIFY(row >= 0);
+    results->setCurrentRow(row);
+    QVERIFY(QMetaObject::invokeMethod(results, "itemActivated", Qt::DirectConnection,
+        Q_ARG(QListWidgetItem *, results->currentItem())));
+    QTRY_COMPARE(dialog.findChild<QListWidget *>("onlineToc")->count(), 2);
+    QSignalSpy opened(&dialog, &OnlineLibraryDialog::openRequested);
+    dialog.findChild<QPushButton *>("openOnlineBook")->click();
+    QCOMPARE(opened.size(), 1);
+    auto book = std::dynamic_pointer_cast<OnlineBook>(Book::create(opened[0][0].toString()));
+    QVERIFY(book);
+    QCOMPARE(book->source().id(), QStringLiteral("aggregate-b"));
+    QCOMPARE(book->title(), QStringLiteral("aggregate-b"));
+    bridge.stop();
+  }
+  void cancelAllSourcesDiscardsActiveAndQueuedReplies() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.filePath("sources.json"));
+    QVERIFY(store.load());
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+    OnlineLibraryDialog dialog(&store, &bridge, dir.filePath("books"));
+    dialog.show();
+    dialog.findChild<QLineEdit *>("onlineKeyword")->setText("slow");
+    auto search = dialog.findChild<QPushButton *>("searchOnline");
+    search->click();
+    QCOMPARE(search->text(), QStringLiteral("取消"));
+    QTest::qWait(30);
+    search->click();
+    QTest::qWait(900);
+    QCOMPARE(dialog.findChild<QListWidget *>("onlineResults")->count(), 0);
+    QCOMPARE(search->text(), QStringLiteral("搜索"));
+    bridge.stop();
+  }
+  void searchResultsKeepAuthorSeparateAndClickable() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.filePath("sources.json"));
+    QVERIFY(store.load());
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+    OnlineLibraryDialog dialog(&store, &bridge, dir.filePath("books"));
+    dialog.findChild<QComboBox *>("librarySources")->setCurrentIndex(1);
+    dialog.show();
+    dialog.findChild<QLineEdit *>("onlineKeyword")->setText("Novel");
+    dialog.findChild<QPushButton *>("searchOnline")->click();
+    auto results = dialog.findChild<QListWidget *>("onlineResults");
+    QTRY_COMPARE(results->count(), 1);
+    QCOMPARE(results->item(0)->text(), QStringLiteral("Fixture Book"));
+    QVERIFY(results->item(0)->data(Qt::AccessibleTextRole).toString().contains("Writer"));
+    const auto row = results->visualItemRect(results->item(0));
+    QTest::mouseClick(results->viewport(), Qt::LeftButton, Qt::NoModifier,
+                     QPoint(results->viewport()->width() - 30, row.center().y()));
+    QTRY_COMPARE(dialog.findChild<QListWidget *>("onlineToc")->count(), 2);
+  }
+  void compactSearchCanCancelAndDiscardLateResults() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.filePath("sources.json"));
+    QVERIFY(store.load());
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+    OnlineLibraryDialog dialog(&store, &bridge, dir.filePath("books"));
+    dialog.findChild<QComboBox *>("librarySources")->setCurrentIndex(1);
+    dialog.show();
+    QVERIFY(!dialog.findChild<QLineEdit *>("directUrl"));
+    QVERIFY(!dialog.findChild<QListWidget *>("cachedBooks"));
+    QVERIFY(dialog.width() <= 560);
+    QVERIFY(dialog.height() <= 420);
+    auto input = dialog.findChild<QLineEdit *>("onlineKeyword");
+    auto search = dialog.findChild<QPushButton *>("searchOnline");
+    QVERIFY(input && search);
+    input->setText("slow");
+    search->click();
+    QCOMPARE(search->text(), QStringLiteral("取消"));
+    search->click();
+    QCOMPARE(search->text(), QStringLiteral("搜索"));
+    QTest::qWait(350);
+    QCOMPARE(dialog.findChild<QListWidget *>("onlineResults")->count(), 0);
+    input->setText("Novel");
+    QTest::keyClick(input, Qt::Key_Return);
+    QTRY_COMPARE(dialog.findChild<QListWidget *>("onlineResults")->count(), 1);
+    QCOMPARE(search->text(), QStringLiteral("搜索"));
+    bridge.stop();
+  }
+  void existingChaptersTakePrecedenceOverSupplementaryVersions() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.filePath("sources.json"));
+    QVERIFY(store.load());
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+    OnlineLibraryDialog dialog(&store, &bridge, dir.filePath("books"));
+    dialog.findChild<QComboBox *>("librarySources")->setCurrentIndex(1);
+    dialog.show();
+    QVERIFY(selectBook(dialog, "mixed"));
+    QTRY_COMPARE(dialog.findChild<QListWidget *>("onlineToc")->count(), 2);
+    QCOMPARE(dialog.findChild<QPushButton *>("openOnlineBook")->text(), QStringLiteral("开始阅读"));
+  }
+  void changingSourceClearsResultsAndDisablesSearchAfterReopening() {
+    QTemporaryDir dir;
+    BookSourceStore store(dir.filePath("sources.json"));
+    QVERIFY(store.load());
+    auto disabled = BookSource::preset().copy("disabled", "Disabled").toJson();
+    disabled["enabled"] = false;
+    QVERIFY(store.upsert(BookSource(disabled)));
+    OnlineEngineBridge bridge;
+    bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
+    OnlineLibraryDialog dialog(&store, &bridge, dir.filePath("books"));
+    dialog.findChild<QComboBox *>("librarySources")->setCurrentIndex(1);
+    dialog.show();
+    dialog.findChild<QLineEdit *>("onlineKeyword")->setText("Novel");
+    auto search = dialog.findChild<QPushButton *>("searchOnline");
+    search->click();
+    auto results = dialog.findChild<QListWidget *>("onlineResults");
+    QTRY_VERIFY(results->count() > 0);
+    auto sources = dialog.findChild<QComboBox *>("librarySources");
+    sources->setCurrentIndex(sources->findData("disabled"));
+    dialog.hide();
+    dialog.show();
+    QCOMPARE(results->count(), 0);
+    QVERIFY(!search->isEnabled());
+  }
   void libraryShowsSafeEngineFailure() {
     QTemporaryDir dir;
     BookSourceStore store(dir.filePath("sources.json"));
@@ -31,11 +193,12 @@ private slots:
     OnlineEngineBridge bridge;
     bridge.setExecutablePath(QCoreApplication::applicationDirPath() + "/online_fixture");
     OnlineLibraryDialog dialog(&store, &bridge, dir.filePath("books"));
+    dialog.findChild<QComboBox *>("librarySources")->setCurrentIndex(1);
     auto sources = dialog.findChild<QComboBox *>("librarySources");
     QVERIFY(sources);
     sources->setCurrentIndex(sources->findData("blocked"));
-    dialog.findChild<QLineEdit *>("directUrl")->setText("https://example.org/book");
-    dialog.findChild<QPushButton *>("importUrl")->click();
+    dialog.findChild<QLineEdit *>("onlineKeyword")->setText("Novel");
+    dialog.findChild<QPushButton *>("searchOnline")->click();
     auto status = dialog.findChild<QLabel *>("libraryStatus");
     QTRY_VERIFY(status->text().contains("HTTP 403"));
     QSignalSpy errors(&bridge, &OnlineEngineBridge::error);
@@ -79,14 +242,12 @@ private slots:
     OnlineLibraryDialog d(&store, &bridge, dir.path() + "/books");
     QSignalSpy opened(&d, &OnlineLibraryDialog::openRequested);
     d.show();
-    auto direct = d.findChild<QLineEdit *>("directUrl");
-    direct->setText("https://example.org/book");
-    d.findChild<QPushButton *>("importUrl")->click();
+    QVERIFY(selectBook(d, "book"));
     auto rows = d.findChild<QListWidget *>("onlineToc");
     QTRY_COMPARE(rows->count(), 2);
     bridge.setExecutablePath({});
-    direct->setText("https://example.org/another-book");
-    d.findChild<QPushButton *>("importUrl")->click();
+    d.findChild<QLineEdit *>("onlineKeyword")->setText("Another book");
+    d.findChild<QPushButton *>("searchOnline")->click();
     QVERIFY(!d.findChild<QPushButton *>("openOnlineBook")->isEnabled());
     rows->setFocus();
     QTest::keyClick(rows, Qt::Key_Return);
@@ -102,20 +263,15 @@ private slots:
     OnlineLibraryDialog d(&store, &bridge, dir.path() + "/books");
     QSignalSpy opened(&d, &OnlineLibraryDialog::openRequested);
     d.show();
-    auto direct = d.findChild<QLineEdit *>("directUrl");
-    direct->setText("https://example.org/book");
-    d.findChild<QPushButton *>("importUrl")->click();
+    QVERIFY(selectBook(d, "book"));
     auto rows = d.findChild<QListWidget *>("onlineToc");
     QTRY_COMPARE(rows->count(), 2);
-    direct->setText("https://example.org/slow/book-b");
-    d.findChild<QPushButton *>("importUrl")->click();
+    QVERIFY(selectBook(d, "slow-book"));
     rows->setFocus();
     QTest::keyClick(rows, Qt::Key_Return);
     QCOMPARE(opened.size(), 0);
-    QPushButton *cancel = nullptr;
-    for (auto button : d.findChildren<QPushButton *>())
-      if (button->text() == QStringLiteral("取消请求"))
-        cancel = button;
+    auto cancel = d.findChild<QPushButton *>("searchOnline");
+    QCOMPARE(cancel->text(), QStringLiteral("取消"));
     QVERIFY(cancel);
     cancel->click();
     QTest::keyClick(rows, Qt::Key_Return);
@@ -145,8 +301,7 @@ private slots:
     OnlineLibraryDialog d(&store, &bridge, dir.path() + "/books");
     QSignalSpy refreshed(&d, &OnlineLibraryDialog::tocRefreshed);
     d.show();
-    d.findChild<QListWidget *>("cachedBooks")->setCurrentRow(0);
-    d.findChild<QPushButton *>("refreshOnlineToc")->click();
+    d.refreshBook(book->filePath());
     auto status = d.findChild<QLabel *>("libraryStatus");
     QTRY_VERIFY(!status->text().contains("正在获取目录"));
     QCOMPARE(refreshed.size(), 0);
@@ -181,6 +336,7 @@ private slots:
     QString output = qEnvironmentVariable("READER_ONLINE_SCREENSHOTS");
     if (output.isEmpty())
       QSKIP("Screenshot artifact capture is opt-in");
+    QApplication::setStyle("Fusion");
     QDir().mkpath(output);
     QTemporaryDir dir;
     BookSourceStore store(dir.path() + "/sources.json");
@@ -207,17 +363,48 @@ private slots:
     library.show();
     QTest::qWait(30);
     QVERIFY(library.grab().save(output + "/online-library-empty.png"));
-    library.findChild<QLineEdit *>("directUrl")
-        ->setText("https://example.org/book");
-    library.findChild<QPushButton *>("importUrl")->click();
+    library.findChild<QLineEdit *>("onlineKeyword")->setText("layout");
+    library.findChild<QPushButton *>("searchOnline")->click();
+    QTRY_COMPARE(library.findChild<QListWidget *>("onlineResults")->count(), BookSource::presets().size() * 3);
+    QVERIFY(library.grab().save(output + "/online-library-results.png"));
+    auto sources = library.findChild<QComboBox *>("librarySources");
+    sources->showPopup();
+    QTest::qWait(30);
+    QVERIFY(sources->view()->window()->grab().save(output + "/online-source-options.png"));
+    sources->hidePopup();
+    QVERIFY(selectBook(library, "book"));
     QVERIFY(library.grab().save(output + "/online-library-loading.png"));
     QTRY_COMPARE(library.findChild<QListWidget *>("onlineToc")->count(), 2);
     QVERIFY(library.grab().save(output + "/online-library-toc.png"));
     bridge.setExecutablePath({});
-    library.findChild<QPushButton *>("importUrl")->click();
+    library.findChild<QPushButton *>("backToOnlineResults")->click();
+    library.findChild<QLineEdit *>("onlineKeyword")->setText("Another book");
+    library.findChild<QPushButton *>("searchOnline")->click();
     QVERIFY(library.grab().save(output + "/online-library-error.png"));
   }
 
+  void realDownloadClosesInstaller() {
+    if (!qEnvironmentVariableIsSet("READER_VERIFY_DOWNLOAD"))
+      QSKIP("Real component download is opt-in");
+    QTemporaryDir dir;
+    OnlineComponentManager manager(dir.filePath("component"), READER_APP_VERSION,
+        OnlineComponentManager::bundledMetadata());
+    QVERIFY(manager.downloadAvailable());
+    OnlineComponentDialog dialog(&manager);
+    dialog.show();
+    QVERIFY(!manager.isBusy());
+    QVERIFY(!manager.isInstalled());
+    QSignalSpy done(&manager, &OnlineComponentManager::finished);
+    QSignalSpy ready(&dialog, &OnlineComponentDialog::ready);
+    dialog.findChild<QPushButton *>("downloadComponent")->click();
+    QVERIFY(manager.isBusy());
+    QTRY_COMPARE_WITH_TIMEOUT(done.size(), 1, 60000);
+    QVERIFY2(done[0][0].toBool(), qPrintable(done[0][1].toString()));
+    QCOMPARE(ready.size(), 1);
+    QVERIFY(manager.isEnabled());
+    QVERIFY(QFileInfo(manager.executablePath()).isExecutable());
+    QVERIFY(!dialog.isVisible());
+  }
   void absentDownloadNoConsent() {
     QTemporaryDir dir;
     OnlineComponentManager m(dir.path() + "/component", "0.1.0");
@@ -248,10 +435,10 @@ private slots:
     QVERIFY(name);
     name->clear();
     QTest::mouseClick(d.findChild<QPushButton *>("saveSource"), Qt::LeftButton);
-    QCOMPARE(store.sources().size(), 1);
+    QCOMPARE(store.sources().size(), BookSource::presets().size());
     name->setText("测试书源");
     QTest::mouseClick(d.findChild<QPushButton *>("saveSource"), Qt::LeftButton);
-    QTRY_COMPARE(store.sources().size(), 2);
+    QTRY_COMPARE(store.sources().size(), BookSource::presets().size() + 1);
     auto input = d.findChild<QLineEdit *>("testInput");
     QVERIFY(input);
     input->setText("https://example.org/book");
@@ -290,17 +477,15 @@ private slots:
     QSignalSpy opened(&d, &OnlineLibraryDialog::openRequested);
     QSignalSpy refreshed(&d, &OnlineLibraryDialog::tocRefreshed);
     d.show();
-    d.findChild<QLineEdit *>("directUrl")->setText("https://example.org/lost");
-    d.findChild<QPushButton *>("importUrl")->click();
+    QVERIFY(selectBook(d, "lost"));
     QTRY_COMPARE(d.findChild<QListWidget *>("onlineToc")->count(), 1);
     d.findChild<QPushButton *>("openOnlineBook")->click();
     QCOMPARE(opened.size(), 1);
     auto unchanged = Book::create(book->filePath());
     QCOMPARE(unchanged->chapters().size(), 2);
     QCOMPARE(unchanged->chapters()[0].title, QString("Original One"));
-    auto cached = d.findChild<QListWidget *>("cachedBooks");
-    cached->setCurrentRow(0);
-    d.findChild<QPushButton *>("refreshOnlineToc")->click();
+    d.show();
+    d.refreshBook(book->filePath());
     auto status = d.findChild<QLabel *>("libraryStatus");
     QTRY_VERIFY(status->text().contains("保留旧目录"));
     QCOMPARE(refreshed.size(), 0);
@@ -309,7 +494,7 @@ private slots:
     cache.load();
     QCOMPARE(cache.progress(book->filePath())->pageIndex, 3);
   }
-  void libraryDirectAndChoices() {
+  void librarySearchAndChoices() {
     QTemporaryDir dir;
     BookSourceStore store(dir.path() + "/sources.json");
     store.load();
@@ -319,10 +504,7 @@ private slots:
     OnlineLibraryDialog d(&store, &bridge, dir.path() + "/books");
     QSignalSpy open(&d, &OnlineLibraryDialog::openRequested);
     d.show();
-    auto input = d.findChild<QLineEdit *>("directUrl");
-    QVERIFY(input);
-    input->setText("https://example.org/versions");
-    QTest::mouseClick(d.findChild<QPushButton *>("importUrl"), Qt::LeftButton);
+    QVERIFY(selectBook(d, "versions"));
     auto toc = d.findChild<QListWidget *>("onlineToc");
     QTRY_COMPARE(toc->count(), 1);
     QTest::mouseClick(d.findChild<QPushButton *>("openOnlineBook"),

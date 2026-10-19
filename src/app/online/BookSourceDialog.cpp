@@ -1,4 +1,5 @@
 #include "BookSourceDialog.h"
+#include "app/ComboBox.h"
 #include "app/UiStyle.h"
 #include "core/online/OnlineEngineBridge.h"
 #include <QCheckBox>
@@ -29,7 +30,7 @@ BookSourceDialog::BookSourceDialog(BookSourceStore *s, OnlineEngineBridge *b,
   layout->setSpacing(12);
   auto top = new QHBoxLayout;
   layout->addLayout(top);
-  m_sources = new QComboBox(this);
+  m_sources = new ComboBox(this);
   m_sources->setObjectName("sourceList");
   top->addWidget(m_sources, 1);
   auto add = new QPushButton(tr("新建"), this);
@@ -69,20 +70,20 @@ BookSourceDialog::BookSourceDialog(BookSourceStore *s, OnlineEngineBridge *b,
   };
   field(basic, "id", tr("唯一标识"), "my-source");
   field(basic, "name", tr("书源名称"));
-  m_kind = new QComboBox(this);
+  m_kind = new ComboBox(this);
   m_kind->addItems({"html", "mediawiki"});
   basic->addRow(tr("网站类型"), m_kind);
   field(basic, "baseUrl", tr("网站地址"), "https://example.org");
   m_enabled = new QCheckBox(tr("启用此书源"), this);
   basic->addRow(m_enabled);
-  auto hint = new QLabel(tr("搜索可以留空，保存后使用书籍网址导入。提取规则使用"
+  auto hint = new QLabel(tr("在线阅读通过书名搜索。提取规则使用"
                             " XPath；搜索标题、链接和作者相对于单条结果。"),
                          this);
   hint->setWordWrap(true);
   search->addRow(hint);
   field(search, "searchUrl", tr("搜索网址"),
         "https://example.org/search?q={keyword}&page={page}");
-  m_method = new QComboBox(this);
+  m_method = new ComboBox(this);
   m_method->addItems({"GET", "POST"});
   search->addRow(tr("请求方式"), m_method);
   field(search, "searchBody", tr("POST 表单"), "q={keyword}&page={page}");
@@ -106,7 +107,7 @@ BookSourceDialog::BookSourceDialog(BookSourceStore *s, OnlineEngineBridge *b,
                            this);
   limits->setWordWrap(true);
   rules->addRow(limits);
-  m_encoding = new QComboBox(this);
+  m_encoding = new ComboBox(this);
   m_encoding->addItems({"auto", "UTF-8", "GB18030"});
   advanced->addRow(tr("网页编码"), m_encoding);
   m_interval = new QSpinBox(this);
@@ -265,7 +266,7 @@ void BookSourceDialog::loadSource() {
   if (i < 0 || i >= m_store->sources().size())
     return;
   auto j = m_store->sources()[i].toJson();
-  m_readOnly = j["id"] == BookSource::preset().id();
+  m_readOnly = BookSource::isPreset(j["id"].toString());
   for (auto it = m_fields.begin(); it != m_fields.end(); ++it) {
     it.value()->setText(j[it.key()].toString());
     it.value()->setReadOnly(m_readOnly);

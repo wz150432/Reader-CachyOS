@@ -125,6 +125,10 @@ ParsedPage HtmlRuleParser::parse(const QByteArray &body, const QUrl &url,
       lower.contains("enable javascript and cookies") ||
       lower.contains("checking your browser"))
     out.error = "Browser challenge";
+  // Pagination controls often live inside <nav>, which is excluded from
+  // readable text. Resolve navigation before cleaning the content tree.
+  const QString nextPage = first(source[op == "toc" ? "tocNextXPath" : "contentNextXPath"].toString(), nullptr, true);
+  const QString contentsPage = op == "toc" ? first(source["tocUrlXPath"].toString(), nullptr, true) : QString();
   auto removed = nodes("//script|//style|//nav");
   removed += nodes(source["removeXPath"]
                        .toString()); // unlink only: overlapping selections
@@ -171,9 +175,9 @@ ParsedPage HtmlRuleParser::parse(const QByteArray &body, const QUrl &url,
     }
     out.result["chapters"] = chapters;
     out.result["choices"] = QJsonArray();
-    out.next = first(source["tocNextXPath"].toString(), nullptr, true);
+    out.next = nextPage;
     if (chapters.isEmpty() && out.next.isEmpty())
-      out.next = first(source["tocUrlXPath"].toString(), nullptr, true);
+      out.next = contentsPage;
   } else {
     QString text;
     for (auto n : nodes(source["contentXPath"].toString()))
@@ -184,7 +188,7 @@ ParsedPage HtmlRuleParser::parse(const QByteArray &body, const QUrl &url,
     if (text.isEmpty() && out.error.isEmpty())
       out.error = "Empty content";
     out.result["text"] = text;
-    out.next = first(source["contentNextXPath"].toString(), nullptr, true);
+    out.next = nextPage;
   }
   if (!out.next.isEmpty())
     out.next = absolute(out.next);

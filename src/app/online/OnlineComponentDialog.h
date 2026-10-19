@@ -1,16 +1,19 @@
 #pragma once
-#include <QDialog>
+#include "app/MenuPanel.h"
 class QLabel;
 class QProgressBar;
 class QPushButton;
 namespace reader {
 class OnlineComponentManager;
-class OnlineComponentDialog : public QDialog {
+class OnlineComponentDialog : public MenuPanel {
   Q_OBJECT
 
 public:
   explicit OnlineComponentDialog(OnlineComponentManager *,
                                  QWidget *parent = nullptr);
+
+signals:
+  void ready();
 
 private:
   void refresh();

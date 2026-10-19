@@ -1,6 +1,8 @@
 #include "NovelSourceClient.h"
 #include "HtmlRuleParser.h"
 #include <QDateTime>
+#include <QCryptographicHash>
+#include <QNetworkCookie>
 #include <QFutureWatcher>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -35,6 +37,7 @@ QByteArray escapedKeyword(const QString &keyword, const QString &encoding) {
 struct NovelSourceClient::Job {
   QJsonObject request, source, result;
   QString id, op, key;
+  QByteArray cookieKey;
   QSet<QString> visited, chapters;
   QPointer<QNetworkReply> reply;
   bool cancelled = false;
@@ -117,6 +120,28 @@ void NovelSourceClient::submit(QJsonObject r) {
   }
   jobs[j->id] = j;
   j->key = j->source["id"].toString() + j->source["baseUrl"].toString();
+  // Keep a normal HTTP session for each source/configuration. Credentials and
+  // server cookies must not bleed into a copied source or changed credentials.
+  j->cookieKey = QCryptographicHash::hash(
+      QJsonDocument(j->source).toJson(QJsonDocument::Compact), QCryptographicHash::Sha256);
+  if (!cookieJars.contains(j->cookieKey)) {
+    auto jar = new QNetworkCookieJar(this);
+    cookieJars.insert(j->cookieKey, jar);
+    auto cookie = j->source["cookie"].toString().toUtf8();
+    if (cookie.isEmpty()) {
+      const auto headers = j->source["headers"].toObject();
+      for (auto it = headers.begin(); it != headers.end(); ++it)
+        if (it.key().compare("Cookie", Qt::CaseInsensitive) == 0)
+          cookie = it.value().toString().toUtf8();
+    }
+    QList<QNetworkCookie> configured;
+    for (const auto &part : cookie.split(';')) {
+      const auto token = part.trimmed();
+      const auto equal = token.indexOf('=');
+      if (equal > 0) configured.append(QNetworkCookie(token.left(equal), token.mid(equal + 1)));
+    }
+    jar->setCookiesFromUrl(configured, QUrl(j->source["baseUrl"].toString()));
+  }
   QUrl u(r["url"].toString());
   if (j->source["kind"] == "mediawiki") {
     u = QUrl(j->source["baseUrl"].toString() + "/w/api.php");
@@ -202,8 +227,13 @@ void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
         if (!QStringList{"host", "content-length", "connection"}.contains(
                 i.key().toLower()))
           req.setRawHeader(i.key().toLatin1(), i.value().toString().toUtf8());
-      if (!j->source["cookie"].toString().isEmpty())
-        req.setRawHeader("Cookie", j->source["cookie"].toString().toUtf8());
+      const auto cookies = cookieJars.value(j->cookieKey)->cookiesForUrl(u);
+      QByteArray header;
+      for (const auto &cookie : cookies) {
+        if (!header.isEmpty()) header += "; ";
+        header += cookie.toRawForm(QNetworkCookie::NameAndValueOnly);
+      }
+      if (!header.isEmpty()) req.setRawHeader("Cookie", header);
     }
     QNetworkReply *r;
     if (post) {
@@ -235,7 +265,7 @@ void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
     deadline->start(20000);
     connect(
         r, &QNetworkReply::finished, this,
-        [this, j, r, data, tooBig, u, redirects, retries, post] {
+        [this, j, r, data, tooBig, u, redirects, retries, post, same] {
           *data += r->readAll();
           r->deleteLater();
           if (j->cancelled)
@@ -246,6 +276,25 @@ void NovelSourceClient::fetch(std::shared_ptr<Job> j, QUrl u, int redirects,
           }
           int status =
               r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+          bool receivedCookie = false;
+          if (same) {
+            const auto cookies = qvariant_cast<QList<QNetworkCookie>>(
+                r->header(QNetworkRequest::SetCookieHeader));
+            if (!cookies.isEmpty())
+              receivedCookie = cookieJars.value(j->cookieKey)->setCookiesFromUrl(cookies, u);
+          }
+          // Sites can bootstrap a session by reloading the requested path (or
+          // the root) after setting a cookie. Retry the original request once;
+          // never execute JavaScript or navigate to a script-selected location.
+          static const QRegularExpression sessionReload(
+              R"(window\s*\.\s*location\s*\.\s*href\s*=\s*["'](/[^"'\\\r\n]*)["'])");
+          const auto reload = sessionReload.match(QString::fromUtf8(*data));
+          const auto reloadUrl = u.resolved(QUrl(reload.captured(1)));
+          if (status == 403 && receivedCookie && retries < 1 && reload.hasMatch() &&
+              (reloadUrl == u || reload.captured(1) == "/")) {
+            fetch(j, u, redirects, retries + 1, post);
+            return;
+          }
           if (status >= 300 && status < 400) {
             auto next = u.resolved(
                 r->attribute(QNetworkRequest::RedirectionTargetAttribute)

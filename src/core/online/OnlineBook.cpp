@@ -133,6 +133,23 @@ bool OnlineBook::open(const QString &path, QString *error,
 QString OnlineBook::chapterUrl(int i) const {
   return i >= 0 && i < m_urls.size() ? m_urls[i] : QString();
 }
+bool OnlineBook::refreshManifest(const QString &title, const QJsonArray &chapters,
+                                 QString *error) {
+  if (m_filePath.isEmpty() || title.isEmpty() || chapters.isEmpty() || chapters.size() > 20000) {
+    if (error) *error = "Invalid book manifest";
+    return false;
+  }
+  for (auto chapter : chapters) {
+    if (!chapter.isObject() || !chapter.toObject().value("title").isString() ||
+        !validUrl(chapter.toObject().value("url").toString())) {
+      if (error) *error = "Invalid chapter manifest";
+      return false;
+    }
+  }
+  const QJsonObject json{{"version", 1}, {"source", m_source.toJson()},
+                         {"url", m_url}, {"title", title}, {"chapters", chapters}};
+  return writeJson(m_filePath, json, error, 8 * 1024 * 1024) && open(m_filePath, error);
+}
 QString OnlineBook::chapterFilePath(int i) const {
   return chapterUrl(i).isEmpty()
              ? QString()

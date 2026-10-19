@@ -21,6 +21,7 @@ inline QString readerUiStyle()
         QToolBar#searchBar { background: #fafaf9; border: none;
                             border-bottom: 1px solid #e3e3df; padding: 4px 8px; spacing: 8px; }
         QDialog { background: #fafaf9; color: #333333; }
+        QDialog[menuPanel="true"] { background: #fafaf9; border: 1px solid #d5d9d6; border-radius: 12px; }
         QDialog QLabel, QDialog QCheckBox { color: #333333; }
         QLabel[sectionHeading="true"] { color: #385746; font-weight: 600;
                                         padding-top: 6px; padding-bottom: 2px; }
@@ -34,6 +35,10 @@ inline QString readerUiStyle()
             border-color: #567c64;
         }
         QSpinBox { padding-right: 22px; }
+        QComboBox[readerCombo="true"] { padding-right: 30px; }
+        QComboBox[readerCombo="true"]::drop-down { subcontrol-origin: padding; subcontrol-position: top right;
+                              width: 28px; border: none; background: transparent; }
+        QComboBox[readerCombo="true"]::down-arrow { image: none; width: 0; height: 0; }
         QSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right;
                               width: 20px; height: 15px; }
         QSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right;
@@ -46,8 +51,8 @@ inline QString readerUiStyle()
         QPushButton:hover { background: #edf2ee; border-color: #9dab9f; }
         QPushButton:pressed { background: #dde7df; }
         QPushButton:focus { border-color: #567c64; }
-        QPushButton:default { background: #385c46; color: #ffffff; border-color: #385c46; }
-        QPushButton:default:hover { background: #2e4c3a; }
+        QPushButton:default, QPushButton[primaryAction="true"] { background: #385c46; color: #ffffff; border-color: #385c46; }
+        QPushButton:default:hover, QPushButton[primaryAction="true"]:hover { background: #2e4c3a; }
         QPushButton:disabled { color: #767676; background: #efefec; border-color: #d9ddd9; }
         QKeySequenceEdit QLineEdit { border: none; background: transparent;
                                     padding: 0; min-height: 0; }
@@ -72,7 +77,9 @@ inline QString readerUiStyle()
         QTreeWidget::item, QListWidget::item { padding: 8px 12px; }
         QTreeWidget::item:hover, QListWidget::item:hover { background: #f0f3ef; }
         QTreeWidget::item:selected, QListWidget::item:selected { background: #e1ebe3; color: #243d2e; }
-        QTreeWidget#tocView { border: none; padding: 12px; }
+        QTreeWidget#tocView { border: none; padding: 0; outline: 0; }
+        QTreeWidget#tocView::item { border: none; }
+        QListWidget { outline: 0; }
         QHeaderView::section { background: #f0f2ee; color: #333333;
                                border: none; padding: 8px; }
         QToolTip { background: #ffffff; color: #333333; border: 1px solid #c8cec9; padding: 5px; }

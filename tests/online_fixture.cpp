@@ -32,6 +32,8 @@ int main(int argc, char **argv) {
     if ((op == "chapter" || op == "toc") &&
         j.value("url").toString().contains("/slow/"))
       QThread::msleep(100);
+    if (op == "search" && j["keyword"].toString() == "slow")
+      QThread::msleep(250);
     QJsonObject result;
     if (op == "hello") {
       if (qEnvironmentVariableIsSet("READER_FIXTURE_HANG_HELLO"))
@@ -62,6 +64,36 @@ int main(int argc, char **argv) {
                                   {"url", "https://example.org/chapter-2"}}}}};
     else
       result = {{"title", "Chapter"}, {"url", j["url"]}, {"text", "Body"}};
+    if (op == "search") {
+      auto keyword = j["keyword"].toString();
+      QString path = keyword == "mixed" ? "mixed"
+                   : keyword == "versions" ? "versions"
+                   : keyword == "lost" ? "lost"
+                   : keyword == "slow-book" ? "slow/book-b" : "book";
+      result["books"] = QJsonArray{QJsonObject{{"title", "Fixture Book"},
+          {"url", "https://example.org/" + path}, {"author", "Writer"}}};
+      if (keyword == "layout")
+        result["books"] = QJsonArray{
+            QJsonObject{{"title", "斗破苍穹之雷霆震碎"}, {"author", "一贫如洗羊羊"}, {"url", "https://example.org/book"}},
+            QJsonObject{{"title", "很长的书名用于检查缩小窗口后省略号是否正常显示"}, {"author", "名字也很长的小说作者"}, {"url", "https://example.org/long"}},
+            QJsonObject{{"title", "没有作者信息的作品"}, {"url", "https://example.org/anonymous"}}};
+    }
+    if (op == "search" && j["keyword"] == "federated") {
+      result["books"] = QJsonArray{QJsonObject{{"title", "Same Book"},
+          {"url", "https://example.org/federated"}, {"author", "Same Writer"}}};
+    }
+    if (op == "toc" && j["url"].toString().contains("/federated"))
+      result["title"] = j["source"].toObject()["id"].toString();
+    if (op == "toc" && j["url"].toString().contains("/mixed"))
+      result["choices"] = QJsonArray{QJsonObject{{"title", "Supplement"}, {"url", "https://example.org/supplement"}}};
+    if (op == "toc" && j["url"].toString().contains("/pending-refresh")) {
+      QJsonArray chapters;
+      for (int index : {0, 5, 1, 2, 3, 4})
+        chapters.append(QJsonObject{{"title", QString::number(index)},
+            {"url", index == 5 ? "https://example.org/slow/chapter-5"
+                                : QString("https://example.org/chapter-%1").arg(index)}});
+      result["chapters"] = chapters;
+    }
     if (op == "toc" && j["url"].toString().contains("/versions")) {
       result.remove("chapters");
       result["choices"] = QJsonArray{QJsonObject{

@@ -7,6 +7,13 @@
 #include <QTemporaryDir>
 #include <QSlider>
 #include <QTimer>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPushButton>
+#include <QWidgetAction>
+#include <QMessageBox>
+#include <QFileDialog>
+#include "app/MenuPanel.h"
 #include "app/SettingsDialog.h"
 #include "app/MainWindow.h"
 #include "app/ReadingView.h"
@@ -36,7 +43,142 @@ private slots:
     void tocHiddenByDefault();
     void resizeGripsCoverWindowEdges();
     void resizeGripsHideInFullscreen();
+    void dragPopupAndDialogWithoutBlockingControls();
+    void refreshLocalFileWithKeyboard();
+    void dialogsStayAttachedToReader();
+    void popupOutsideClickCloses();
 };
+
+void TestWindow::popupOutsideClickCloses()
+{
+    MainWindow window;
+    window.show();
+    QDialog dialog(&window);
+    dialog.resize(250, 150);
+    dialog.show();
+    QTRY_VERIFY(dialog.isVisible());
+    QTest::mouseClick(&dialog, Qt::LeftButton, {}, QPoint(-10, -10));
+    QTRY_VERIFY(!dialog.isVisible());
+}
+
+void TestWindow::dialogsStayAttachedToReader()
+{
+    MainWindow window;
+    window.resize(500, 300);
+    window.move(100, 80);
+    window.show();
+    Settings settings;
+    SettingsDialog dialog(&settings, &window);
+    dialog.show();
+    QTRY_VERIFY(dialog.isVisible());
+    QCOMPARE(dialog.windowType(), Qt::Popup);
+    const QPoint before = dialog.pos();
+    window.move(window.pos() + QPoint(30, 20));
+    QTRY_COMPARE(dialog.pos(), before + QPoint(30, 20));
+    QMessageBox confirmation(QMessageBox::Question, "Confirm", "Delete?",
+                            QMessageBox::Yes | QMessageBox::No, &dialog);
+    confirmation.show();
+    QTRY_VERIFY(confirmation.isVisible());
+    QCOMPARE(confirmation.windowType(), Qt::Popup);
+    const QPoint messageBefore = confirmation.pos();
+    window.move(window.pos() + QPoint(20, 10));
+    QTRY_COMPARE(confirmation.pos(), messageBefore + QPoint(20, 10));
+    confirmation.reject();
+    QFileDialog picker(&dialog, "Open");
+    picker.show();
+    QTRY_VERIFY(picker.isVisible());
+    QCOMPARE(picker.windowType(), Qt::Popup);
+    picker.reject();
+    window.hide();
+    QTRY_VERIFY(!dialog.isVisible());
+    dialog.show();
+    QTRY_VERIFY(!dialog.isVisible());
+    QMessageBox hiddenOwner(QMessageBox::Question, "Confirm", "Hidden owner",
+                            QMessageBox::Ok, &window);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    QTimer::singleShot(1000, &hiddenOwner, &QDialog::reject);
+    hiddenOwner.exec();
+    QVERIFY(elapsed.elapsed() < 800);
+}
+
+void TestWindow::dragPopupAndDialogWithoutBlockingControls()
+{
+    MainWindow window;
+    window.show();
+    MenuPanel panel(&window);
+    panel.resize(300, 180);
+    panel.move(100, 100);
+    panel.show();
+    auto drag = [](QWidget *surface) {
+        const QPoint start(10, 10), delta(40, 30);
+        const QPoint global = surface->mapToGlobal(start);
+        QTest::mousePress(surface, Qt::LeftButton, {}, start);
+        QMouseEvent move(QEvent::MouseMove, QPointF(start + delta), QPointF(global + delta),
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(surface, &move);
+        QTest::mouseRelease(surface, Qt::LeftButton, {}, start);
+    };
+    const QPoint before = panel.pos();
+    drag(&panel);
+    QCOMPARE(panel.pos(), before + QPoint(40, 30));
+    panel.hide();
+    QDialog dialog(&window);
+    dialog.resize(300, 180);
+    QLabel label("Drag here", &dialog);
+    label.setGeometry(0, 0, 200, 30);
+    QLineEdit input(&dialog);
+    input.setGeometry(10, 40, 180, 30);
+    QPushButton button("Click", &dialog);
+    button.setGeometry(10, 80, 100, 30);
+    QSignalSpy clicked(&button, &QPushButton::clicked);
+    dialog.show();
+    const QPoint dialogBefore = dialog.pos();
+    drag(&label);
+    QCOMPARE(dialog.pos(), dialogBefore + QPoint(40, 30));
+    const QPoint after = dialog.pos();
+    drag(&input);
+    QCOMPARE(dialog.pos(), after);
+    QTest::mouseClick(&button, Qt::LeftButton);
+    QCOMPARE(clicked.size(), 1);
+    dialog.hide();
+    QMenu menu(&window);
+    auto title = new QLabel("Menu heading", &menu);
+    auto heading = new QWidgetAction(&menu);
+    heading->setDefaultWidget(title);
+    menu.addAction(heading);
+    auto action = menu.addAction("Open");
+    QSignalSpy triggered(action, &QAction::triggered);
+    menu.popup(QPoint(100, 100));
+    QTest::qWait(10);
+    const QPoint menuBefore = menu.pos();
+    drag(title);
+    QCOMPARE(menu.pos(), menuBefore + QPoint(40, 30));
+    QTest::mouseClick(&menu, Qt::LeftButton, {}, menu.actionGeometry(action).center());
+    QCOMPARE(triggered.size(), 1);
+}
+
+void TestWindow::refreshLocalFileWithKeyboard()
+{
+    QTemporaryDir dir;
+    QFile file(dir.filePath("book.txt"));
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("Original unique text");
+    file.close();
+    MainWindow window;
+    window.show();
+    window.openBook(file.fileName());
+    auto view = window.findChild<ReadingView *>("readingView");
+    QVERIFY(view->findNext("Original"));
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    file.write("Replacement unique text");
+    file.close();
+    window.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+    QTest::keyClick(view, Qt::Key_R, Qt::ControlModifier);
+    QVERIFY(view->findNext("Replacement"));
+    QCOMPARE(window.centralWidget(), view);
+}
 
 void TestWindow::menuVisibilitySurvivesExit()
 {

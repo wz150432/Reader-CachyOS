@@ -19,6 +19,7 @@ class QWidgetAction;
 
 namespace reader {
 
+class MenuPanel;
 class ReadingView;
 class RemoteControl;
 class NiriClient;
@@ -80,6 +81,8 @@ private slots:
 private:
     void buildMenus();
     void showOnlineReading();
+    void ensureOnlineLibrary();
+    void refreshCurrentBook();
     void showOnlineComponent();
     void requestOnlineChapter(int index);
     void remapOnlineProgress(const QString &,const QStringList &,const QStringList &);
@@ -119,6 +122,8 @@ private:
     std::unique_ptr<BookSourceStore> m_onlineSources;
     QPointer<OnlineLibraryDialog> m_onlineLibrary;
     QPointer<OnlineComponentDialog> m_onlineComponentDialog;
+    QPointer<MenuPanel> m_aboutPanel;
+    bool m_openOnlineAfterInstall = false;
     bool m_restoringOnline = false;
     int m_onlineRestoreChapter = -1;
     int m_onlineRestorePage = 0;

@@ -1,221 +1,258 @@
 #include "OnlineLibraryDialog.h"
 #include "BookSourceDialog.h"
+#include "app/ComboBox.h"
 #include "app/UiStyle.h"
 #include "core/Cache.h"
 #include "core/online/OnlineBook.h"
 #include "core/online/OnlineEngineBridge.h"
 #include <QComboBox>
+#include <algorithm>
 #include <QDirIterator>
-#include <QGroupBox>
+#include <QHideEvent>
+#include <QMenu>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPainter>
 #include <QPushButton>
 #include <QSet>
-#include <QSplitter>
+#include <QStackedWidget>
+#include <QStyledItemDelegate>
 #include <QUrl>
 #include <QUuid>
 #include <QVBoxLayout>
 namespace reader {
+namespace {
+constexpr int AuthorRole = Qt::UserRole + 1;
+
+int authorColumn(const QListWidget *view) {
+  return qRound(view->viewport()->width() * 0.70);
+}
+
+class BookResultDelegate final : public QStyledItemDelegate {
+public:
+  explicit BookResultDelegate(QListWidget *view)
+      : QStyledItemDelegate(view), m_view(view) {}
+
+  void paint(QPainter *painter, const QStyleOptionViewItem &option,
+             const QModelIndex &index) const override {
+    QStyleOptionViewItem background(option);
+    initStyleOption(&background, index);
+    background.text.clear();
+    background.state &= ~QStyle::State_HasFocus;
+    m_view->style()->drawControl(QStyle::CE_ItemViewItem, &background, painter,
+                                 m_view);
+    const int split = authorColumn(m_view);
+    const QRect title(option.rect.left() + 12, option.rect.top(),
+                      qMax(0, split - option.rect.left() - 24), option.rect.height());
+    const QRect author(split + 12, option.rect.top(),
+                       qMax(0, option.rect.right() - split - 23), option.rect.height());
+    painter->save();
+    painter->setClipRect(option.rect);
+    painter->setFont(background.font);
+    painter->setPen(background.state & QStyle::State_Selected
+                        ? QColor("#243d2e") : QColor("#333333"));
+    painter->drawText(title, Qt::AlignLeft | Qt::AlignVCenter,
+                     background.fontMetrics.elidedText(index.data().toString(),
+                                                        Qt::ElideRight, title.width()));
+    painter->drawText(author, Qt::AlignLeft | Qt::AlignVCenter,
+                     background.fontMetrics.elidedText(index.data(AuthorRole).toString(),
+                                                        Qt::ElideRight, author.width()));
+    painter->restore();
+  }
+
+private:
+  QListWidget *m_view;
+};
+
+class BookResultsView final : public QListWidget {
+public:
+  explicit BookResultsView(QWidget *parent) : QListWidget(parent) {
+    setItemDelegate(new BookResultDelegate(this));
+    setUniformItemSizes(true);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  }
+
+protected:
+  void paintEvent(QPaintEvent *event) override {
+    QListWidget::paintEvent(event);
+    QPainter painter(viewport());
+    painter.setPen(QColor("#d5d9d6"));
+    const int split = authorColumn(this);
+    painter.drawLine(split, 0, split, viewport()->height() - 1);
+  }
+};
+} // namespace
+
 OnlineLibraryDialog::OnlineLibraryDialog(BookSourceStore *s,
                                          OnlineEngineBridge *b, QString root,
                                          QWidget *p)
-    : QDialog(p), m_store(s), m_bridge(b), m_root(root),
+    : MenuPanel(p), m_store(s), m_bridge(b), m_root(root),
       m_session(QUuid::createUuid().toString()) {
   setWindowTitle(tr("在线阅读"));
   setObjectName("onlineLibraryDialog");
   setStyleSheet(readerUiStyle());
-  resize(980, 700);
+  resize(560, 380);
   auto layout = new QVBoxLayout(this);
-  layout->setContentsMargins(20, 18, 20, 18);
-  layout->setSpacing(12);
+  layout->setContentsMargins(12, 12, 12, 10);
+  layout->setSpacing(8);
   auto sources = new QHBoxLayout;
   layout->addLayout(sources);
-  sources->addWidget(new QLabel(tr("书源"), this));
-  m_sources = new QComboBox(this);
+  m_sources = new ComboBox(this);
   m_sources->setObjectName("librarySources");
+  m_sources->setAccessibleName(tr("书源"));
   sources->addWidget(m_sources, 1);
-  auto manage = new QPushButton(tr("管理书源…"), this);
-  sources->addWidget(manage);
-  connect(manage, &QPushButton::clicked, this, [this] {
+  auto more = new QPushButton(tr("更多"), this);
+  more->setObjectName("onlineMore");
+  auto menu = new QMenu(more);
+  auto manage = menu->addAction(tr("管理书源…"));
+  connect(manage, &QAction::triggered, this, [this] {
     auto d = new BookSourceDialog(m_store, m_bridge, this);
     d->setAttribute(Qt::WA_DeleteOnClose);
     connect(d, &BookSourceDialog::sourcesChanged, this,
             &OnlineLibraryDialog::reloadSources);
+    hide();
     d->show();
   });
+  auto component = menu->addAction(tr("在线组件…"));
+  connect(component, &QAction::triggered, this, [this] {
+    hide();
+    emit componentRequested();
+  });
+  more->setMenu(menu);
+  sources->addWidget(more);
   auto searchRow = new QHBoxLayout;
   layout->addLayout(searchRow);
   m_keyword = new QLineEdit(this);
   m_keyword->setObjectName("onlineKeyword");
   m_keyword->setPlaceholderText(tr("输入书名或作者"));
+  m_keyword->setClearButtonEnabled(true);
   searchRow->addWidget(m_keyword, 1);
-  auto searchButton = new QPushButton(tr("搜索"), this);
-  searchButton->setObjectName("searchOnline");
-  searchButton->setDefault(true);
-  searchRow->addWidget(searchButton);
-  connect(searchButton, &QPushButton::clicked, this, [this] { search(1); });
-  connect(m_keyword, &QLineEdit::returnPressed, this, [this] { search(1); });
-  auto directRow = new QHBoxLayout;
-  layout->addLayout(directRow);
-  m_direct = new QLineEdit(this);
-  m_direct->setObjectName("directUrl");
-  m_direct->setPlaceholderText(tr("粘贴书籍或目录网址 https://…"));
-  directRow->addWidget(m_direct, 1);
-  auto import = new QPushButton(tr("获取目录"), this);
-  import->setObjectName("importUrl");
-  directRow->addWidget(import);
-  connect(import, &QPushButton::clicked, this, [this] {
-    m_cachedBook.reset();
-    toc(m_direct->text());
+  m_search = new QPushButton(tr("搜索"), this);
+  m_search->setObjectName("searchOnline");
+  m_search->setProperty("primaryAction", true);
+  searchRow->addWidget(m_search);
+  connect(m_search, &QPushButton::clicked, this, [this] {
+    if (busy()) {
+      stop();
+      m_status->setText(tr("已取消"));
+    } else {
+      search();
+    }
   });
-  connect(m_direct, &QLineEdit::returnPressed, import, &QPushButton::click);
-  auto split = new QSplitter(this);
-  layout->addWidget(split, 1);
-  auto column = [&](const QString &title, QListWidget **list) {
-    auto box = new QGroupBox(title, this);
-    auto l = new QVBoxLayout(box);
-    *list = new QListWidget(box);
-    (*list)->setAlternatingRowColors(true);
-    l->addWidget(*list);
-    split->addWidget(box);
-    return l;
-  };
-  auto results = column(tr("搜索结果"), &m_results);
+  connect(m_keyword, &QLineEdit::returnPressed, m_search, &QPushButton::click);
+
+  m_pages = new QStackedWidget(this);
+  layout->addWidget(m_pages, 1);
+  auto resultsPage = new QWidget(this);
+  auto results = new QVBoxLayout(resultsPage);
+  results->setContentsMargins(0, 0, 0, 0);
+  results->setSpacing(6);
+  m_results = new BookResultsView(resultsPage);
   m_results->setObjectName("onlineResults");
-  auto paging = new QHBoxLayout;
-  results->addLayout(paging);
-  m_previous = new QPushButton(tr("上一页"), this);
-  m_next = new QPushButton(tr("下一页"), this);
-  m_pageLabel = new QLabel(tr("第 1 页"), this);
-  paging->addWidget(m_previous);
-  paging->addWidget(m_pageLabel, 1, Qt::AlignCenter);
-  paging->addWidget(m_next);
-  m_previous->setEnabled(false);
-  m_next->setEnabled(false);
-  connect(m_previous, &QPushButton::clicked, this,
-          [this] { search(m_page - 1); });
-  connect(m_next, &QPushButton::clicked, this, [this] { search(m_page + 1); });
-  auto chapters = column(tr("版本与章节"), &m_toc);
+  m_results->setAccessibleName(tr("搜索结果"));
+  results->addWidget(m_results);
+  m_pages->addWidget(resultsPage);
+
+  auto chaptersPage = new QWidget(this);
+  auto chapters = new QVBoxLayout(chaptersPage);
+  chapters->setContentsMargins(0, 0, 0, 0);
+  chapters->setSpacing(6);
+  auto heading = new QHBoxLayout;
+  auto back = new QPushButton(tr("返回结果"), this);
+  back->setObjectName("backToOnlineResults");
+  heading->addWidget(back);
+  m_bookTitle = new QLabel(this);
+  m_bookTitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  heading->addWidget(m_bookTitle, 1);
+  chapters->addLayout(heading);
+  connect(back, &QPushButton::clicked, this, [this] {
+    stop();
+    m_pages->setCurrentIndex(0);
+    m_status->clear();
+  });
+  m_toc = new QListWidget(chaptersPage);
   m_toc->setObjectName("onlineToc");
+  m_toc->setAccessibleName(tr("版本与章节"));
+  chapters->addWidget(m_toc);
   m_open = new QPushButton(tr("开始阅读"), this);
   m_open->setObjectName("openOnlineBook");
   m_open->setEnabled(false);
   chapters->addWidget(m_open);
-  connect(m_open, &QPushButton::clicked, this,
-          &OnlineLibraryDialog::openSelection);
-  auto cached = column(tr("已缓存书籍"), &m_cached);
-  m_cached->setObjectName("cachedBooks");
-  auto cachedOpen = new QPushButton(tr("打开缓存"), this);
-  cached->addWidget(cachedOpen);
-  auto refresh = new QPushButton(tr("手动刷新目录"), this);
-  refresh->setObjectName("refreshOnlineToc");
-  cached->addWidget(refresh);
-  connect(cachedOpen, &QPushButton::clicked, this, [this] {
-    auto item = m_cached->currentItem();
-    if (item)
-      emit openRequested(item->data(Qt::UserRole).toString());
-  });
-  connect(m_cached, &QListWidget::itemActivated, this,
-          [cachedOpen](QListWidgetItem *) { cachedOpen->click(); });
-  connect(refresh, &QPushButton::clicked, this, [this] {
-    auto item = m_cached->currentItem();
-    if (!item) {
-      m_status->setText(tr("请先选择已缓存书籍。"));
-      return;
-    }
-    auto book = std::dynamic_pointer_cast<OnlineBook>(
-        Book::create(item->data(Qt::UserRole).toString()));
-    if (!book) {
-      m_status->setText(tr("缓存目录无法读取。"));
-      return;
-    }
-    m_cachedBook = book;
-    emit refreshRequested(book->filePath());
-    toc(book->url());
-  });
-  m_status = new QLabel(
-      tr("选择书源后搜索，或直接输入书籍网址。下载的章节保存在本机。"), this);
+  connect(m_open, &QPushButton::clicked, this, &OnlineLibraryDialog::openSelection);
+  m_pages->addWidget(chaptersPage);
+  m_status = new QLabel(this);
   m_status->setWordWrap(true);
+  m_status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  m_status->setMaximumHeight(40);
   m_status->setObjectName("libraryStatus");
   layout->addWidget(m_status);
-  auto bottom = new QHBoxLayout;
-  layout->addLayout(bottom);
-  m_cancel = new QPushButton(tr("取消请求"), this);
-  m_cancel->setEnabled(false);
-  bottom->addWidget(m_cancel);
-  connect(m_cancel, &QPushButton::clicked, this, [this] {
-    stop();
-    m_status->setText(tr("已取消，可重新搜索或获取目录。"));
+  connect(m_results, &QListWidget::itemClicked, this, [this](QListWidgetItem *) {
+    selectResult();
   });
-  bottom->addStretch();
-  auto component = new QPushButton(tr("在线组件…"), this);
-  bottom->addWidget(component);
-  connect(component, &QPushButton::clicked, this,
-          &OnlineLibraryDialog::componentRequested);
-  auto close = new QPushButton(tr("关闭"), this);
-  bottom->addWidget(close);
-  connect(close, &QPushButton::clicked, this, &QDialog::close);
-  connect(m_results, &QListWidget::itemActivated, this,
-          [this](QListWidgetItem *) {
-            int i = m_results->currentRow();
-            if (i >= 0 && i < m_rows.size()) {
-              m_cachedBook.reset();
-              toc(m_rows[i].toObject()["url"].toString());
-            }
-          });
-  connect(m_results, &QListWidget::currentRowChanged, this, [this](int i) {
-    if (i >= 0 && i < m_rows.size()) {
-      m_direct->setText(m_rows[i].toObject()["url"].toString());
-    }
+  connect(m_results, &QListWidget::itemActivated, this, [this](QListWidgetItem *) {
+    selectResult();
   });
   connect(m_toc, &QListWidget::itemActivated, this,
           [this](QListWidgetItem *) { openSelection(); });
-  connect(m_sources, &QComboBox::currentIndexChanged, this,
-          [this, searchButton](int i) {
-            stop();
-            m_cachedBook.reset();
-            m_results->clear();
-            m_toc->clear();
-            m_rows = {};
-            m_chapters = {};
-            m_open->setEnabled(false);
-            if (i >= 0 && i < m_store->sources().size())
-              m_source = m_store->sources()[i];
-            auto j = m_source.toJson();
-            bool available = j["enabled"].toBool(true);
-            bool searchable =
-                available && (j["kind"] == "mediawiki" ||
-                              !j["searchUrl"].toString().isEmpty());
-            m_keyword->setVisible(searchable);
-            searchButton->setVisible(searchable);
-            m_previous->setEnabled(false);
-            m_next->setEnabled(false);
-            if (!available)
-              m_status->setText(tr("此书源已停用，可在管理书源中启用。"));
-            else if (!searchable)
-              m_status->setText(tr("此书源仅支持网址导入，请输入书籍网址。"));
-          });
+  connect(m_sources, &QComboBox::currentIndexChanged, this, [this](int i) {
+    stop();
+    m_cachedBook.reset();
+    m_results->clear();
+    m_toc->clear();
+    m_rows = {};
+    m_chapters = {};
+    m_open->setEnabled(false);
+    m_pages->setCurrentIndex(0);
+    m_source = BookSource();
+    for (const auto &source : m_store->sources())
+      if (source.id() == m_sources->itemData(i).toString()) m_source = source;
+    auto j = m_source.toJson();
+    const bool all = m_sources->itemData(i).toString().isEmpty();
+    bool available = all || j["enabled"].toBool(true);
+    auto canSearch = [](const BookSource &source) {
+      auto json = source.toJson();
+      return json["enabled"].toBool(true) &&
+          (json["kind"] == "mediawiki" || !json["searchUrl"].toString().isEmpty());
+    };
+    bool searchable = all ? std::any_of(m_store->sources().cbegin(), m_store->sources().cend(), canSearch)
+                          : canSearch(m_source);
+    m_keyword->setEnabled(searchable);
+    m_search->setEnabled(searchable);
+    m_status->setText(!available ? tr("此书源已停用，可在“更多”中管理。")
+                      : !searchable ? tr("此书源没有搜索规则，请在“更多”中配置。")
+                      : QString());
+  });
   connect(
       b, &OnlineEngineBridge::result, this,
       [this](const QString &id, const QString &session, const QJsonObject &r) {
-        if (id != m_request || session != m_session)
+        if (session != m_session) return;
+        if (m_searchRequests.contains(id)) {
+          finishSearch(id, r);
           return;
+        }
+        if (id != m_request) return;
         m_request.clear();
-        m_cancel->setEnabled(false);
+        setBusy(false);
         receive(r);
       });
   connect(b, &OnlineEngineBridge::error, this,
           [this](const QString &id, const QString &session, const QString &e) {
-            if (id != m_request || session != m_session)
+            if (session != m_session) return;
+            if (m_searchRequests.contains(id)) {
+              finishSearch(id, {}, e);
               return;
+            }
+            if (id != m_request) return;
             m_request.clear();
-            m_cancel->setEnabled(false);
+            setBusy(false);
             m_status->setText(
-                tr("请求失败：%1。请检查网址或书源规则后重试。").arg(e));
+                tr("请求失败：%1。可重试或更换书源。").arg(e));
+            if (m_cachedBook) emit refreshFailed(m_status->text());
           });
+  for (auto button : findChildren<QPushButton *>())
+    button->setAutoDefault(false);
   reloadSources();
-  refreshCached();
 }
 OnlineLibraryDialog::~OnlineLibraryDialog() {
   stop();
@@ -225,59 +262,143 @@ OnlineLibraryDialog::~OnlineLibraryDialog() {
 void OnlineLibraryDialog::reloadSources() {
   QString id = m_sources->currentData().toString();
   m_sources->clear();
+  m_sources->addItem(tr("全部书源"), QString());
   for (const auto &s : m_store->sources())
     m_sources->addItem(s.toJson()["name"].toString(), s.id());
   int i = m_sources->findData(id);
   m_sources->setCurrentIndex(i < 0 ? 0 : i);
 }
-void OnlineLibraryDialog::refreshCached() {
-  m_cached->clear();
-  QDirIterator it(m_root, {"*.rnovel"}, QDir::Files,
-                  QDirIterator::Subdirectories);
-  while (it.hasNext()) {
-    auto path = it.next();
-    auto book = Book::create(path);
-    if (!book)
-      continue;
-    auto item = new QListWidgetItem(book->title(), m_cached);
-    item->setData(Qt::UserRole, path);
-    item->setToolTip(path);
+void OnlineLibraryDialog::selectResult() {
+  if (!m_request.isEmpty()) return;
+  int i = m_results->currentRow();
+  if (i >= 0 && i < m_rows.size()) {
+    const auto row = m_rows[i].toObject();
+    m_source = BookSource(row["_source"].toObject());
+    m_cachedBook.reset();
+    toc(row["url"].toString());
   }
-  if (!m_cached->count())
-    m_cached->setToolTip(
-        tr("尚无缓存。搜索并打开一本书后，已读章节会出现在本机。"));
+}
+void OnlineLibraryDialog::refreshBook(const QString &path) {
+  auto book = std::dynamic_pointer_cast<OnlineBook>(Book::create(path));
+  if (!book) {
+    m_status->setText(tr("无法读取这本在线书籍。"));
+    emit refreshFailed(m_status->text());
+    return;
+  }
+  m_cachedBook = book;
+  emit refreshRequested(path);
+  toc(book->url());
+}
+void OnlineLibraryDialog::hideEvent(QHideEvent *event) {
+  stop();
+  MenuPanel::hideEvent(event);
+}
+void OnlineLibraryDialog::setBusy(bool busy) {
+  m_search->setText(busy ? tr("取消") : tr("搜索"));
+  m_keyword->setReadOnly(busy);
 }
 void OnlineLibraryDialog::stop() {
+  m_searching = false;
+  m_searchQueue.clear();
+  const auto searches = m_searchRequests.keys();
+  m_searchRequests.clear();
+  for (const auto &id : searches) m_bridge->cancel(id);
   if (!m_request.isEmpty()) {
     auto id = m_request;
     m_request.clear();
     m_bridge->cancel(id);
   }
-  m_cancel->setEnabled(false);
+  setBusy(false);
 }
 void OnlineLibraryDialog::request(const QString &op,
                                   const QJsonObject &fields) {
   stop();
   if (m_bridge->executablePath().isEmpty()) {
     m_status->setText(
-        tr("在线组件未启用。请从“在线组件”启用或安装；已缓存章节仍可打开。"));
+        tr("在线组件未启用，请从“更多”安装或启用。"));
+    if (m_cachedBook) emit refreshFailed(m_status->text());
     return;
   }
   m_operation = op;
   m_request = m_bridge->request(op, fields, m_session);
-  m_cancel->setEnabled(true);
+  setBusy(true);
   m_status->setText(op == "search" ? tr("正在搜索…") : tr("正在获取目录…"));
 }
-void OnlineLibraryDialog::search(int page) {
+void OnlineLibraryDialog::search() {
   m_cachedBook.reset();
-  if (page < 1 || m_keyword->text().trimmed().isEmpty()) {
+  if (m_keyword->text().trimmed().isEmpty()) {
     m_status->setText(tr("请输入书名或作者。"));
     return;
   }
-  m_page = page;
-  request("search", {{"source", m_source.toJson()},
-                     {"keyword", m_keyword->text()},
-                     {"page", page}});
+  m_pages->setCurrentIndex(0);
+  m_open->setEnabled(false);
+  m_toc->clear();
+  m_chapters = {};
+  m_rows = {};
+  m_results->clear();
+  stop();
+  if (m_bridge->executablePath().isEmpty()) {
+    m_status->setText(tr("在线组件未启用，请从“更多”安装或启用。"));
+    return;
+  }
+  m_searchKeys.clear();
+  m_searchErrors.clear();
+  m_searchDone = 0;
+  m_searchKeyword = m_keyword->text().trimmed();
+  const QString selected = m_sources->currentData().toString();
+  for (const auto &source : m_store->sources()) {
+    auto json = source.toJson();
+    if ((selected.isEmpty() || selected == source.id()) && json["enabled"].toBool(true) &&
+        (json["kind"] == "mediawiki" || !json["searchUrl"].toString().isEmpty()))
+      m_searchQueue.append(source);
+  }
+  m_searchTotal = m_searchQueue.size();
+  m_searching = true;
+  pumpSearch();
+}
+void OnlineLibraryDialog::pumpSearch() {
+  while (m_searching && m_searchRequests.size() < 3 && !m_searchQueue.isEmpty()) {
+    const auto source = m_searchQueue.takeFirst();
+    const auto id = m_bridge->request("search", {{"source", source.toJson()},
+        {"keyword", m_searchKeyword}, {"page", 1}}, m_session);
+    m_searchRequests.insert(id, source);
+  }
+  m_searching = !m_searchRequests.isEmpty() || !m_searchQueue.isEmpty();
+  setBusy(m_searching);
+  m_status->setText(m_searching ? tr("已搜 %1/%2 个书源 · %3 项结果")
+      .arg(m_searchDone).arg(m_searchTotal).arg(m_rows.size())
+      : tr("搜索完成 · %1 项结果%2").arg(m_rows.size()).arg(m_searchErrors.isEmpty()
+          ? QString() : tr(" · %1 个书源失败").arg(m_searchErrors.size())));
+  if (!m_searching && m_searchTotal == 1 && !m_searchErrors.isEmpty())
+    m_status->setText(tr("请求失败：%1").arg(m_searchErrors.first()));
+  m_status->setToolTip(m_searchErrors.join('\n'));
+}
+void OnlineLibraryDialog::finishSearch(const QString &id, const QJsonObject &result,
+                                       const QString &error) {
+  const auto source = m_searchRequests.take(id);
+  ++m_searchDone;
+  if (!error.isEmpty()) {
+    m_searchErrors.append(source.toJson()["name"].toString() + ": " + error);
+  } else {
+    for (const auto &value : result["books"].toArray()) {
+      auto row = value.toObject();
+      QUrl url(row["url"].toString());
+      url.setFragment({});
+      const auto key = source.id() + '\n' + url.adjusted(QUrl::NormalizePathSegments).toString();
+      if (m_searchKeys.contains(key)) continue;
+      m_searchKeys.insert(key);
+      row["_source"] = source.toJson();
+      m_rows.append(row);
+      // Append without replacing existing rows or changing the user's selection.
+      auto item = new QListWidgetItem(row["title"].toString(), m_results);
+      item->setData(AuthorRole, row["author"].toString());
+      const auto description = row["title"].toString() + tr("，作者：") + row["author"].toString();
+      item->setData(Qt::AccessibleTextRole, description);
+      item->setToolTip(description + '\n' + source.toJson()["name"].toString() + '\n' + row["url"].toString());
+    }
+    if (m_results->currentRow() < 0 && m_results->count()) m_results->setCurrentRow(0);
+  }
+  pumpSearch();
 }
 void OnlineLibraryDialog::toc(const QString &url) {
   stop();
@@ -291,10 +412,12 @@ void OnlineLibraryDialog::toc(const QString &url) {
   if (!u.isValid() || u.host().isEmpty() ||
       (u.scheme() != "https" && u.scheme() != "http") ||
       !u.userInfo().isEmpty()) {
-    m_status->setText(tr("请输入完整的 HTTP 或 HTTPS 书籍网址。"));
+    m_status->setText(tr("书源返回的书籍链接无效，请更换书源。"));
     return;
   }
   m_open->setEnabled(false);
+  m_pages->setCurrentIndex(1);
+  m_bookTitle->setText(tr("正在获取目录…"));
   m_url = url;
   request("toc", {{"source", m_cachedBook ? m_cachedBook->source().toJson()
                                           : m_source.toJson()},
@@ -304,31 +427,23 @@ void OnlineLibraryDialog::showRows(QListWidget *list, const QJsonArray &rows) {
   list->clear();
   for (auto value : rows) {
     auto j = value.toObject();
-    auto item = new QListWidgetItem(j["title"].toString() +
-                                        (j["author"].toString().isEmpty()
-                                             ? QString()
-                                             : " · " + j["author"].toString()),
-                                    list);
-    item->setToolTip(j["url"].toString());
+    const QString title = j["title"].toString();
+    const QString author = j["author"].toString();
+    auto item = new QListWidgetItem(title, list);
+    item->setData(AuthorRole, author);
+    const QString description = author.isEmpty() ? title : tr("%1，作者：%2").arg(title, author);
+    item->setData(Qt::AccessibleTextRole, description);
+    item->setToolTip(description + '\n' + j["url"].toString());
   }
   if (list->count())
     list->setCurrentRow(0);
 }
 void OnlineLibraryDialog::receive(const QJsonObject &r) {
-  if (m_operation == "search") {
-    m_rows = r["books"].toArray();
-    showRows(m_results, m_rows);
-    m_pageLabel->setText(tr("第 %1 页").arg(m_page));
-    m_previous->setEnabled(m_page > 1);
-    m_next->setEnabled(r["hasMore"].toBool());
-    m_status->setText(m_rows.isEmpty()
-                          ? tr("没有搜索结果，可更换关键词或直接导入网址。")
-                          : tr("选中作品后点击“获取目录”，或双击结果。"));
-    return;
-  }
-  m_choices = !r["choices"].toArray().isEmpty();
+  m_choices = r["chapters"].toArray().isEmpty() && !r["choices"].toArray().isEmpty();
   m_chapters = m_choices ? r["choices"].toArray() : r["chapters"].toArray();
   m_title = r["title"].toString();
+  m_bookTitle->setText(m_title);
+  m_bookTitle->setToolTip(m_title);
   if (!r["url"].toString().isEmpty())
     m_url = r["url"].toString();
   showRows(m_toc, m_chapters);
@@ -338,12 +453,18 @@ void OnlineLibraryDialog::receive(const QJsonObject &r) {
       m_choices ? tr("作品有多个版本，请选择版本后继续。")
       : m_chapters.isEmpty()
           ? tr("没有有效章节；请选择其他版本或检查书源规则。")
-          : tr("共 %1 章。阅读时先获取当前章，再预取后面最多 3 章。")
+          : tr("共 %1 章")
                 .arg(m_chapters.size()));
+  if (m_cachedBook && (m_choices || m_chapters.isEmpty())) {
+    emit refreshFailed(m_status->text());
+    return;
+  }
   if (m_cachedBook && !m_choices && !m_chapters.isEmpty()) {
     QStringList oldUrls, newUrls;
     for (int i = 0; i < m_cachedBook->chapters().size(); ++i)
       oldUrls << m_cachedBook->chapterUrl(i);
+    // Background refresh must map the position reached while its request was pending.
+    emit refreshRequested(m_cachedBook->filePath());
     Cache cache;
     cache.load();
     auto saved = cache.progress(m_cachedBook->filePath());
@@ -362,6 +483,7 @@ void OnlineLibraryDialog::receive(const QJsonObject &r) {
         m_status->setText(
             tr("新目录缺少当前阅读章节，已保留旧目录与进度。请检查书源规则。"));
         m_open->setEnabled(false);
+        emit refreshFailed(m_status->text());
         return;
       }
     }
@@ -372,6 +494,12 @@ void OnlineLibraryDialog::receive(const QJsonObject &r) {
       refreshedUrls.insert(
           u.adjusted(QUrl::NormalizePathSegments).toString(QUrl::FullyEncoded));
     }
+    if (!m_requiredChapterUrl.isEmpty() && !refreshedUrls.contains(m_requiredChapterUrl)) {
+      m_open->setEnabled(false);
+      m_status->setText(tr("新目录缺少正在获取的章节，已保留旧目录与进度。"));
+      emit refreshFailed(m_status->text());
+      return;
+    }
     for (const auto &bookmark : cache.bookmarks(m_cachedBook->filePath())) {
       if (bookmark.chapterIndex < 0 ||
           bookmark.chapterIndex >= oldUrls.size() ||
@@ -379,23 +507,23 @@ void OnlineLibraryDialog::receive(const QJsonObject &r) {
         m_open->setEnabled(false);
         m_status->setText(tr("新目录缺少书签引用的章节，已保留旧目录、进度和书"
                              "签。请检查书源规则。"));
+        emit refreshFailed(m_status->text());
         return;
       }
     }
     QString e;
-    auto updated = OnlineBook::createManifest(
-        m_root, m_cachedBook->source(), m_cachedBook->url(),
-        m_title.isEmpty() ? m_cachedBook->title() : m_title, m_chapters, &e);
-    if (!updated) {
+    auto updated = m_cachedBook;
+    if (!updated->refreshManifest(m_title.isEmpty() ? updated->title() : m_title,
+                                  m_chapters, &e)) {
       m_open->setEnabled(false);
       m_status->setText(e);
+      emit refreshFailed(e);
       return;
     }
     for (int i = 0; i < updated->chapters().size(); ++i)
       newUrls << updated->chapterUrl(i);
     emit tocRefreshed(updated->filePath(), oldUrls, newUrls);
     m_cachedBook = updated;
-    refreshCached();
     m_status->setText(tr("目录已刷新，阅读进度按原章节网址匹配。"));
   }
 }
@@ -420,6 +548,7 @@ void OnlineLibraryDialog::openSelection() {
             (m_cachedBook ? m_cachedBook->source().id() : m_source.id()) &&
         QUrl(book->url()).adjusted(QUrl::NormalizePathSegments) ==
             wanted.adjusted(QUrl::NormalizePathSegments)) {
+      hide();
       emit openRequested(book->filePath());
       return;
     }
@@ -433,7 +562,7 @@ void OnlineLibraryDialog::openSelection() {
     m_status->setText(e);
     return;
   }
-  refreshCached();
+  hide();
   emit openRequested(book->filePath());
 }
 } // namespace reader

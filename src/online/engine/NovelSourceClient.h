@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QSet>
 #include <memory>
+class QNetworkCookieJar;
 class NovelSourceClient : public QObject {
   Q_OBJECT
 public:
@@ -20,6 +21,7 @@ private:
   QNetworkAccessManager network;
   QHash<QString, std::shared_ptr<Job>> jobs;
   QHash<QString, qint64> last;
+  QHash<QByteArray, QNetworkCookieJar *> cookieJars;
   void fetch(std::shared_ptr<Job>, QUrl, int = 0, int = 0, bool = false);
   void finish(std::shared_ptr<Job>, QString = {});
   void parse(std::shared_ptr<Job>, QByteArray, QUrl, QString = {});

@@ -1,5 +1,8 @@
 #include "app/MainWindow.h"
 #include "app/UiStyle.h"
+#include "app/MenuPanel.h"
+#include "app/WindowDragFilter.h"
+#include "app/AnchoredDialogs.h"
 #include "core/NiriClient.h"
 #include "core/online/OnlineComponentManager.h"
 #include "core/online/OnlineEngineBridge.h"
@@ -65,50 +68,6 @@
 
 namespace reader {
 
-class DraggableDialog final : public QDialog
-{
-public:
-    using QDialog::QDialog;
-
-    void enableContentDragging()
-    {
-        installEventFilter(this);
-        for (QLabel *label : findChildren<QLabel *>()) {
-            if (!label->openExternalLinks() && label->textFormat() != Qt::RichText
-                && !(label->textInteractionFlags()
-                     & (Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard)))
-                label->installEventFilter(this);
-        }
-    }
-
-protected:
-    bool eventFilter(QObject *object, QEvent *event) override
-    {
-        if (event->type() == QEvent::MouseButtonPress) {
-            auto *mouse = static_cast<QMouseEvent *>(event);
-            if (mouse->button() == Qt::LeftButton) {
-                // Let Wayland's compositor own the drag; keep a fallback for X11/offscreen.
-                if (windowHandle() && windowHandle()->startSystemMove())
-                    return true;
-                m_dragging = true;
-                m_dragOffset = mouse->globalPosition().toPoint() - pos();
-                return true;
-            }
-        } else if (event->type() == QEvent::MouseMove && m_dragging) {
-            move(static_cast<QMouseEvent *>(event)->globalPosition().toPoint() - m_dragOffset);
-            return true;
-        } else if (event->type() == QEvent::MouseButtonRelease && m_dragging) {
-            m_dragging = false;
-            return true;
-        }
-        return QDialog::eventFilter(object, event);
-    }
-
-private:
-    bool m_dragging = false;
-    QPoint m_dragOffset;
-};
-
 class ResizeGrip final : public QWidget
 {
 public:
@@ -151,6 +110,8 @@ MainWindow::MainWindow(QWidget *parent)
     setStyleSheet(readerUiStyle());
     setAttribute(Qt::WA_TranslucentBackground, true);
     QApplication::instance()->installEventFilter(this);
+    new WindowDragFilter(this);
+    new AnchoredDialogs(this);
     m_niriClient = new NiriClient(this);
     m_progressSaveTimer = new QTimer(this);
     m_progressSaveTimer->setSingleShot(true);
@@ -231,32 +192,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_onlineBridge = new OnlineEngineBridge(this);
     m_onlineBridge->setExecutablePath(m_onlineComponent->executablePath());
     m_onlineController = new OnlineReadingController(m_onlineBridge, this);
-    auto onlineBar = addToolBar(tr("在线章节"));
-    onlineBar->setObjectName("onlineStatusBar");
-    onlineBar->setMovable(false);
-    auto onlineStatus = new QLabel(tr("按章节估算 · 已缓存章节可离线阅读"), onlineBar);
-    onlineStatus->setObjectName("onlineStatus");
-    onlineStatus->setWordWrap(true);
-    onlineBar->addWidget(onlineStatus);
-    auto retry = onlineBar->addAction(tr("重试章节"));
-    retry->setObjectName("retryOnlineChapter");
-    auto cancel = onlineBar->addAction(tr("取消请求"));
-    cancel->setObjectName("cancelOnlineChapter");
-    auto component = onlineBar->addAction(tr("在线组件…"));
-    connect(component, &QAction::triggered, this, &MainWindow::showOnlineComponent);
-    connect(retry, &QAction::triggered, this, [this] {
-        if (m_view->pendingChapter() >= 0) m_view->retryPendingChapter();
-        else requestOnlineChapter(m_view->currentChapter());
-    });
-    connect(cancel, &QAction::triggered, this, [this] {
-        m_onlineController->cancel();
-        if (m_view->pendingChapter() >= 0) m_view->cancelPendingChapter();
-        if (auto label = findChild<QLabel *>("onlineStatus")) label->setText(tr("请求已取消；已缓存章节仍可阅读。"));
-    });
     connect(m_view, &ReadingView::chapterRequested, this, &MainWindow::requestOnlineChapter);
     connect(m_view, &ReadingView::chapterRetryRequested, this, &MainWindow::requestOnlineChapter);
     connect(m_view, &ReadingView::chapterCancelRequested, m_onlineController, &OnlineReadingController::cancel);
-    connect(m_onlineController, &OnlineReadingController::currentReady, this, [this, onlineStatus](int index) {
+    connect(m_onlineController, &OnlineReadingController::currentReady, this, [this](int index) {
         bool restore = index == m_onlineRestoreChapter;
         if (restore) m_restoringOnline = true;
         m_view->setChapterReady(index);
@@ -266,20 +205,9 @@ MainWindow::MainWindow(QWidget *parent)
             m_onlineRestoreChapter = -1;
             m_restoringOnline = false;
         }
-        onlineStatus->setText(tr("按章节估算 · 已缓存章节可离线阅读"));
         saveProgress();
     });
-    connect(m_onlineController, &OnlineReadingController::currentError, this, [this, onlineStatus](int index, const QString &error) {
-        m_view->setChapterError(index, error);
-        onlineStatus->setText(tr("获取章节失败：%1。可重试或检查在线组件。").arg(error));
-    });
-    connect(m_onlineController, &OnlineReadingController::chapterRequestStarted, this, [onlineStatus](int) {
-        onlineStatus->setText(tr("按章节估算 · 正在获取章节，可取消"));
-    });
-    connect(m_onlineController, &OnlineReadingController::backgroundStatus, this, [onlineStatus](int completed, int total) {
-        onlineStatus->setText(completed < 0 ? tr("按章节估算 · 后续章节预取失败，可重试")
-                                           : tr("按章节估算 · 后续章节已缓存 %1 / %2").arg(completed).arg(total));
-    });
+    connect(m_onlineController, &OnlineReadingController::currentError, m_view, &ReadingView::setChapterError);
     connect(m_onlineComponent, &OnlineComponentManager::stopping, this, [this] {
         m_onlineController->cancel();
         m_onlineBridge->stop();
@@ -289,7 +217,11 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_onlineComponent, &OnlineComponentManager::changed, this, [this] {
         m_onlineBridge->setExecutablePath(m_onlineComponent->executablePath());
     });
-    onlineBar->hide();
+    auto refresh = new QAction(tr("刷新"), this);
+    refresh->setObjectName("actRefresh");
+    refresh->setShortcut(QKeySequence(QStringLiteral("Ctrl+R")));
+    addAction(refresh);
+    connect(refresh, &QAction::triggered, this, &MainWindow::refreshCurrentBook);
     buildMenus();
     menuBar()->setVisible(!m_settings.menuBarHidden);
     updateChromeSpacing();
@@ -434,90 +366,43 @@ void MainWindow::buildMenus()
 
     QAction *about = menuBar()->addAction(QStringLiteral("关于"));
     about->setObjectName(QStringLiteral("actAbout"));
-    connect(about, &QAction::triggered, this, [this] {
-        const QUrl projectUrl(QStringLiteral("https://github.com/wz150432/Reader-CachyOS"));
-        DraggableDialog dialog(this);
-        dialog.setObjectName(QStringLiteral("aboutDialog"));
-        dialog.setWindowTitle(QStringLiteral("关于 Reader"));
-        dialog.setWindowIcon(QIcon(QStringLiteral(":/reader/icon.svg")));
-        dialog.setFixedWidth(480);
-        dialog.setStyleSheet(QStringLiteral(
-            "QDialog#aboutDialog { background: #ffffff; }"
-            "QLabel#aboutTitle { color: #173447; font-size: 23px; font-weight: 700; }"
-            "QLabel#aboutSubtitle { color: #526b78; font-size: 13px; }"
-            "QLabel#projectCaption { color: #526b78; font-size: 12px; }"
-            "QLabel#projectLink { color: #176487; font-size: 13px; }"
-            "QPushButton#projectButton { background: #246b8b; color: white; border: none; "
-            "border-radius: 12px; padding: 9px 16px; font-weight: 600; }"
-            "QPushButton#projectButton:hover { background: #185775; }"
-            "QPushButton#projectButton:focus { border: 2px solid #83b9d1; }"
-            "QPushButton#closeAboutButton { background: #edf3f6; color: #173447; border: none; "
-            "border-radius: 12px; padding: 9px 16px; }"
-            "QPushButton#closeAboutButton:hover { background: #dceaf0; }"
-            "QPushButton#closeAboutButton:focus { border: 2px solid #83b9d1; }"));
-
-        auto *outer = new QVBoxLayout(&dialog);
-        outer->setContentsMargins(28, 26, 28, 24);
-        outer->setSpacing(0);
-
-        auto *intro = new QHBoxLayout;
-        intro->setSpacing(18);
-        auto *icon = new QLabel(&dialog);
-        icon->setObjectName(QStringLiteral("aboutIcon"));
-        icon->setPixmap(QIcon(QStringLiteral(":/reader/icon.svg")).pixmap(72, 72));
-        icon->setFixedSize(72, 72);
-        intro->addWidget(icon);
-        auto *titles = new QVBoxLayout;
-        titles->setSpacing(4);
-        auto *title = new QLabel(QStringLiteral("Reader"), &dialog);
-        title->setObjectName(QStringLiteral("aboutTitle"));
-        titles->addWidget(title);
-        auto *subtitle = new QLabel(QStringLiteral("安静地读完一本书"), &dialog);
-        subtitle->setObjectName(QStringLiteral("aboutSubtitle"));
-        titles->addWidget(subtitle);
-        intro->addLayout(titles);
-        intro->addStretch();
-        outer->addLayout(intro);
-
-        outer->addSpacing(24);
-        auto *description = new QLabel(QStringLiteral("离线 TXT / EPUB / MOBI / AZW3 / FB2 阅读器，专注本地阅读。"), &dialog);
-        description->setStyleSheet(QStringLiteral("color: #284759; font-size: 14px;"));
-        outer->addWidget(description);
-        outer->addSpacing(24);
-
-        auto *caption = new QLabel(QStringLiteral("项目主页"), &dialog);
-        caption->setObjectName(QStringLiteral("projectCaption"));
-        outer->addWidget(caption);
-        outer->addSpacing(4);
-        auto *link = new QLabel(&dialog);
-        link->setObjectName(QStringLiteral("projectLink"));
-        link->setTextFormat(Qt::RichText);
-        link->setTextInteractionFlags(Qt::TextBrowserInteraction);
-        link->setOpenExternalLinks(true);
-        link->setText(QStringLiteral("<a href=\"%1\" style=\"color:#176487; text-decoration:underline;\">%1</a>")
-                          .arg(projectUrl.toString()));
-        outer->addWidget(link);
-
-        outer->addSpacing(26);
-        auto *buttons = new QHBoxLayout;
-        buttons->setSpacing(10);
-        auto *support = new QLabel(QStringLiteral("喜欢这个项目？欢迎点个 Star。"), &dialog);
-        support->setStyleSheet(QStringLiteral("color: #526b78; font-size: 12px;"));
-        buttons->addWidget(support);
-        buttons->addStretch();
-        auto *close = new QPushButton(QStringLiteral("关闭"), &dialog);
-        close->setObjectName(QStringLiteral("closeAboutButton"));
-        connect(close, &QPushButton::clicked, &dialog, &QDialog::reject);
-        buttons->addWidget(close);
-        auto *open = new QPushButton(QStringLiteral("在 GitHub 查看"), &dialog);
-        open->setObjectName(QStringLiteral("projectButton"));
-        connect(open, &QPushButton::clicked, &dialog, [projectUrl] {
-            QDesktopServices::openUrl(projectUrl);
-        });
-        buttons->addWidget(open);
-        outer->addLayout(buttons);
-        dialog.enableContentDragging();
-        dialog.exec();
+    connect(about, &QAction::triggered, this, [this, about] {
+        if (!m_aboutPanel) {
+            auto *panel = new MenuPanel(this);
+            m_aboutPanel = panel;
+            panel->setObjectName(QStringLiteral("aboutDialog"));
+            panel->setWindowTitle(QStringLiteral("关于 Reader"));
+            panel->resize(320, 160);
+            auto *layout = new QVBoxLayout(panel);
+            layout->setContentsMargins(16, 14, 16, 14);
+            layout->setSpacing(10);
+            auto *intro = new QHBoxLayout;
+            intro->setSpacing(12);
+            auto *icon = new QLabel(panel);
+            icon->setObjectName(QStringLiteral("aboutIcon"));
+            icon->setPixmap(QIcon(QStringLiteral(":/reader/icon.svg")).pixmap(40, 40));
+            intro->addWidget(icon);
+            auto *titles = new QVBoxLayout;
+            auto *title = new QLabel(QStringLiteral("Reader"), panel);
+            title->setObjectName(QStringLiteral("aboutTitle"));
+            title->setStyleSheet(QStringLiteral("font-size: 18px; font-weight: 600;"));
+            titles->addWidget(title);
+            titles->addWidget(new QLabel(QStringLiteral("安静地读完一本书"), panel));
+            intro->addLayout(titles, 1);
+            layout->addLayout(intro);
+            auto *description = new QLabel(QStringLiteral("TXT / EPUB / MOBI / AZW3 / FB2 · 在线阅读"), panel);
+            description->setWordWrap(true);
+            layout->addWidget(description);
+            auto *link = new QLabel(panel);
+            link->setObjectName(QStringLiteral("projectLink"));
+            link->setText(QStringLiteral("<a href=\"https://github.com/wz150432/Reader-CachyOS\" style=\"color:#385c46\">在 GitHub 查看项目</a>"));
+            link->setOpenExternalLinks(true);
+            layout->addWidget(link);
+        }
+        if (m_aboutPanel->isVisible())
+            m_aboutPanel->hide();
+        else
+            m_aboutPanel->showAnchored(menuBar(), menuBar()->actionGeometry(about));
     });
     applyKeyset();
 }
@@ -543,7 +428,6 @@ void MainWindow::openBook(const QString &path)
     auto online = std::dynamic_pointer_cast<OnlineBook>(m_book);
     m_onlineController->setBook(online);
     if (!online && !m_onlineLibrary) m_onlineBridge->stop();
-    if (auto bar = findChild<QToolBar *>("onlineStatusBar")) bar->setVisible(bool(online));
     if (auto wholeBook = findChild<QCheckBox *>("searchWholeBook"))
         wholeBook->setText(online ? tr("已缓存章节") : tr("全书"));
     m_toc->hide();
@@ -578,31 +462,68 @@ void MainWindow::openBook(const QString &path)
 
 void MainWindow::showOnlineComponent()
 {
-    if (!m_onlineComponentDialog) m_onlineComponentDialog = new OnlineComponentDialog(m_onlineComponent, this);
-    m_onlineComponentDialog->show();
-    m_onlineComponentDialog->raise();
-    m_onlineComponentDialog->activateWindow();
+    if (m_onlineLibrary) m_onlineLibrary->hide();
+    if (!m_onlineComponentDialog) {
+        m_onlineComponentDialog = new OnlineComponentDialog(m_onlineComponent, this);
+        connect(m_onlineComponentDialog, &OnlineComponentDialog::ready, this, [this] {
+            if (m_openOnlineAfterInstall) {
+                m_openOnlineAfterInstall = false;
+                QTimer::singleShot(0, this, [this] {
+                    if (isVisible()) showOnlineReading();
+                });
+            }
+        });
+    }
+    m_onlineComponentDialog->showAnchored(menuBar());
 }
 
 void MainWindow::showOnlineReading()
 {
-    if (!m_onlineComponent->isEnabled()) { showOnlineComponent(); return; }
+    if (!m_onlineComponent->isEnabled()) {
+        m_openOnlineAfterInstall = true;
+        showOnlineComponent();
+        return;
+    }
+    if (m_onlineComponentDialog) m_onlineComponentDialog->hide();
     if (!property("onlineSourceError").toString().isEmpty()) {
         QMessageBox::warning(this, tr("书源配置损坏"), tr("原配置已保留，无法保存。请检查：%1").arg(m_onlineRoot + "/sources.json"));
     }
+    ensureOnlineLibrary();
+    m_onlineLibrary->showAnchored(menuBar());
+}
+
+void MainWindow::ensureOnlineLibrary()
+{
     if (!m_onlineLibrary) {
         m_onlineLibrary = new OnlineLibraryDialog(m_onlineSources.get(), m_onlineBridge, m_onlineRoot + "/books", this);
-        m_onlineLibrary->setAttribute(Qt::WA_DeleteOnClose);
         connect(m_onlineLibrary, &OnlineLibraryDialog::openRequested, this, &MainWindow::openBook);
         connect(m_onlineLibrary, &OnlineLibraryDialog::componentRequested, this, &MainWindow::showOnlineComponent);
-        connect(m_onlineLibrary, &OnlineLibraryDialog::refreshRequested, this, [this](const QString &) { saveProgress(); });
-        connect(m_onlineLibrary, &OnlineLibraryDialog::tocRefreshed, this, &MainWindow::remapOnlineProgress);
-        connect(m_onlineLibrary, &QObject::destroyed, this, [this] {
-            if (m_onlineBridge && (!m_book || !m_book->isOnline())) m_onlineBridge->stop();
+        connect(m_onlineLibrary, &OnlineLibraryDialog::refreshRequested, this, [this](const QString &path) {
+            saveProgress();
+            auto online = std::dynamic_pointer_cast<OnlineBook>(m_book);
+            m_onlineLibrary->setRequiredChapterUrl(online && m_currentPath == path && m_view->pendingChapter() >= 0
+                ? online->chapterUrl(m_view->pendingChapter()) : QString());
         });
+        connect(m_onlineLibrary, &OnlineLibraryDialog::tocRefreshed, this, &MainWindow::remapOnlineProgress);
+        connect(m_onlineLibrary, &OnlineLibraryDialog::refreshFailed, m_view, &QWidget::setToolTip);
+        connect(m_onlineLibrary, &OnlineLibraryDialog::tocRefreshed, this, [this] { m_view->setToolTip({}); });
     }
-    m_onlineLibrary->refreshCached();
-    m_onlineLibrary->show(); m_onlineLibrary->raise(); m_onlineLibrary->activateWindow();
+}
+
+void MainWindow::refreshCurrentBook()
+{
+    if (!m_book || !leaveEditModeIfActive()) return;
+    saveProgress();
+    if (!m_book->isOnline()) {
+        openBook(m_currentPath);
+        return;
+    }
+    if (!m_onlineComponent->isEnabled()) {
+        m_view->setToolTip(tr("在线组件已停用，缓存章节仍可阅读。"));
+        return;
+    }
+    ensureOnlineLibrary();
+    m_onlineLibrary->refreshBook(m_currentPath);
 }
 
 void MainWindow::requestOnlineChapter(int index)
@@ -613,7 +534,6 @@ void MainWindow::requestOnlineChapter(int index)
         if (!m_book->chapterAvailable(index)) {
             const auto error = tr("在线组件未启用。请打开“在线组件”安装或启用后重试；缓存章节仍可阅读。");
             m_view->setChapterError(index, error);
-            if (auto label = findChild<QLabel *>("onlineStatus")) label->setText(error);
         }
         return;
     }
@@ -638,9 +558,25 @@ void MainWindow::remapOnlineProgress(const QString &path,const QStringList &oldU
     m_cache.save();
     if (m_currentPath == path) {
         // Persisted indices now address the new TOC. Do not save the old live view again.
+        const int pending = map(m_view->pendingChapter());
+        const int pendingPage = m_view->pendingPage();
+        const bool restoring = m_onlineRestoreChapter >= 0;
+        const int restorePage = m_onlineRestorePage;
+        const qreal restorePixel = m_onlineRestorePixel;
         m_onlineController->close();
         m_currentRecordRemoved = true;
         openBook(path);
+        if (pending >= 0 && m_view->pendingChapter() != pending &&
+            (m_view->pendingChapter() >= 0 || m_view->currentChapter() != pending))
+            m_view->goToChapter(pending);
+        if (pending >= 0 && m_view->pendingChapter() >= 0) {
+            m_view->goToPage(pendingPage);
+            if (restoring) {
+                m_onlineRestoreChapter = pending;
+                m_onlineRestorePage = restorePage;
+                m_onlineRestorePixel = restorePixel;
+            }
+        }
     }
 }
 

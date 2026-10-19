@@ -11,6 +11,7 @@
 #include <QPushButton>
 #include <QScopeGuard>
 #include <QTemporaryDir>
+#include <QTreeWidget>
 #include <QtTest>
 #include <archive.h>
 #include <archive_entry.h>
@@ -58,6 +59,109 @@ private:
     return manager->importPackage(path, metadata);
   }
 private slots:
+  void refreshPreservesPendingNavigationByUrl() {
+    QTemporaryDir dir;
+    QJsonArray chapters;
+    for (int index = 0; index < 6; ++index)
+      chapters.append(QJsonObject{{"title", QString::number(index)},
+          {"url", index == 5 ? "https://example.org/slow/chapter-5"
+                              : QString("https://example.org/chapter-%1").arg(index)}});
+    auto book = OnlineBook::createManifest(dir.filePath("books"), BookSource::preset(),
+        "https://example.org/slow/pending-refresh", "Book", chapters);
+    QVERIFY(book);
+    for (int index = 0; index < 5; ++index)
+      QVERIFY(book->saveChapter(index, "Cached text"));
+    MainWindow window;
+    window.show();
+    auto manager = window.findChild<OnlineComponentManager *>();
+    auto cleanup = qScopeGuard([&] { manager->uninstall(); });
+    QSignalSpy done(manager, &OnlineComponentManager::finished);
+    QVERIFY(install(manager, dir.path()));
+    QTRY_COMPARE(done.size(), 1);
+    window.openBook(book->filePath());
+    auto view = window.findChild<ReadingView *>("readingView");
+    window.activateWindow();
+    QVERIFY(QTest::qWaitForWindowActive(&window));
+    QTest::keyClick(view, Qt::Key_R, Qt::ControlModifier);
+    auto library = window.findChild<OnlineLibraryDialog *>();
+    QVERIFY(library);
+    QSignalSpy refreshed(library, &OnlineLibraryDialog::tocRefreshed);
+    view->goToChapter(5);
+    QCOMPARE(view->pendingChapter(), 5);
+    QTRY_COMPARE(refreshed.size(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(view->currentChapter(), 1, 2000);
+    QCOMPARE(view->pendingChapter(), -1);
+  }
+
+  void refreshOnlineInPlaceWithKeyboard() {
+    QTemporaryDir dir;
+    auto book = OnlineBook::createManifest(dir.filePath("books"), BookSource::preset(),
+        "https://example.org/book", "Book",
+        QJsonArray{QJsonObject{{"title", "One"}, {"url", "https://example.org/chapter-1"}}});
+    QVERIFY(book && book->saveChapter(0, "Cached text"));
+    MainWindow window;
+    window.show();
+    auto manager = window.findChild<OnlineComponentManager *>();
+    auto cleanup = qScopeGuard([&] { manager->uninstall(); });
+    QSignalSpy done(manager, &OnlineComponentManager::finished);
+    QVERIFY(install(manager, dir.path()));
+    QTRY_COMPARE(done.size(), 1);
+    window.openBook(book->filePath());
+    auto view = window.findChild<ReadingView *>("readingView");
+    QTest::keyClick(view, Qt::Key_R, Qt::ControlModifier);
+    QTRY_COMPARE(window.findChild<QTreeWidget *>("tocView")->topLevelItemCount(), 2);
+    QCOMPARE(window.centralWidget(), view);
+    QCOMPARE(view->currentChapter(), 0);
+    for (auto widget : window.findChildren<QWidget *>())
+      if (widget->isWindow()) QVERIFY(!widget->isVisible());
+    const QString output = qEnvironmentVariable("READER_UNIFIED_SCREENSHOTS");
+    if (!output.isEmpty()) {
+      QDir().mkpath(output);
+      QVERIFY(window.grab().save(output + "/online-reading.png"));
+    }
+  }
+
+  void installationReturnsToAnchoredLibrary() {
+    QTemporaryDir dir;
+    MainWindow window;
+    window.show();
+    auto manager = window.findChild<OnlineComponentManager *>();
+    QVERIFY(manager);
+    window.findChild<QAction *>("actOnlineReading")->trigger();
+    auto component = window.findChild<OnlineComponentDialog *>();
+    QVERIFY(component && component->isVisible());
+    QVERIFY(!manager->isBusy());
+    QSignalSpy done(manager, &OnlineComponentManager::finished);
+    QVERIFY(install(manager, dir.path()));
+    QTRY_COMPARE(done.size(), 1);
+    QVERIFY(done[0][0].toBool());
+    QTRY_VERIFY(!component->isVisible());
+    auto library = window.findChild<OnlineLibraryDialog *>();
+    QVERIFY(library && library->isVisible());
+    QCOMPARE(library->windowType(), Qt::Popup);
+    QVERIFY(library->width() <= 560);
+    QTest::keyClick(library, Qt::Key_Escape);
+    QVERIFY(!library->isVisible());
+    QVERIFY(manager->uninstall());
+  }
+  void completedInstallationDoesNotReshowHiddenReader() {
+    QTemporaryDir dir;
+    MainWindow window;
+    window.show();
+    auto manager = window.findChild<OnlineComponentManager *>();
+    QVERIFY(manager);
+    auto cleanup = qScopeGuard([&] { manager->uninstall(); });
+    window.findChild<QAction *>("actOnlineReading")->trigger();
+    QSignalSpy done(manager, &OnlineComponentManager::finished);
+    QVERIFY(install(manager, dir.path()));
+    window.hide();
+    QTRY_COMPARE(done.size(), 1);
+    QVERIFY(done[0][0].toBool());
+    QTest::qWait(30);
+    QVERIFY(!window.isVisible());
+    auto library = window.findChild<OnlineLibraryDialog *>();
+    QVERIFY(!library || !library->isVisible());
+  }
   void bookmarksRequireDisplayedCommittedChapter() {
     QTemporaryDir dir;
     auto book = OnlineBook::createManifest(dir.path(), BookSource::preset(),
@@ -125,6 +229,7 @@ private slots:
     cache.upsertProgress({book->filePath(), 1, 1, 123, savedPixel});
     cache.save();
     MainWindow window;
+    window.show();
     auto manager = window.findChild<OnlineComponentManager *>();
     QVERIFY(manager);
     auto cleanup = qScopeGuard([&] {

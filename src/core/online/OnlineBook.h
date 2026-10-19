@@ -18,6 +18,8 @@ public:
   bool isOnline() const override { return true; }
   bool chapterAvailable(int) const override;
   bool saveChapter(int, const QString &, QString *error = nullptr);
+  bool refreshManifest(const QString &title, const QJsonArray &chapters,
+                       QString *error = nullptr);
   QString chapterFilePath(int) const;
   QString chapterUrl(int) const;
   BookSource source() const { return m_source; }

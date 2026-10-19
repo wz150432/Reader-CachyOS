@@ -55,7 +55,7 @@ private slots:
     void editModeCtrlEToggles();
     void aboutActionOpensProjectDialog();
     void shortcutCapturedInlineAndCancelDiscards();
-    void aboutDialogDragsFromContent();
+    void aboutPanelFollowsMenuBar();
     void chromeDoesNotOverlapReading();
     void remoteShortcutDoesNotLaunchReaderWithoutInstance();
     void remoteCommandsDoNotInitializeGraphics_data();
@@ -261,6 +261,7 @@ void TestMainWindow2::remoteCommandsDoNotInitializeGraphics()
 void TestMainWindow2::aboutActionOpensProjectDialog()
 {
     MainWindow w;
+    w.show();
     QAction *about = nullptr;
     for (QAction *action : w.menuBar()->actions()) {
         if (action->text() == QStringLiteral("关于"))
@@ -277,7 +278,7 @@ void TestMainWindow2::aboutActionOpensProjectDialog()
             return;
         auto *link = dialog->findChild<QLabel *>(QStringLiteral("projectLink"));
         auto *icon = dialog->findChild<QLabel *>(QStringLiteral("aboutIcon"));
-        sawDialog = link && link->text().contains(QStringLiteral("https://github.com/wz150432/Reader-CachyOS"))
+        sawDialog = dialog->isVisible() && link && link->text().contains(QStringLiteral("https://github.com/wz150432/Reader-CachyOS"))
             && icon && !icon->pixmap(Qt::ReturnByValue).isNull();
         const QString screenshotPath = qEnvironmentVariable("READER_ABOUT_SCREENSHOT");
         if (!screenshotPath.isEmpty())
@@ -285,7 +286,7 @@ void TestMainWindow2::aboutActionOpensProjectDialog()
         dialog->reject();
     });
     about->trigger();
-    QVERIFY(sawDialog);
+    QTRY_VERIFY(sawDialog);
 }
 
 void TestMainWindow2::shortcutCapturedInlineAndCancelDiscards()
@@ -316,33 +317,23 @@ void TestMainWindow2::shortcutCapturedInlineAndCancelDiscards()
     QCOMPARE(settings.keyset.shortcut(KeyAction::PageUp), QKeySequence(QStringLiteral("Alt+K")));
 }
 
-void TestMainWindow2::aboutDialogDragsFromContent()
+void TestMainWindow2::aboutPanelFollowsMenuBar()
 {
     MainWindow window;
+    window.move(30, 30);
     window.show();
-    bool moved = false;
-    QTimer::singleShot(0, &window, [&] {
-        auto *dialog = window.findChild<QDialog *>(QStringLiteral("aboutDialog"));
-        if (!dialog) return;
-        const auto close = qScopeGuard([&] { dialog->reject(); });
-        auto *title = dialog->findChild<QLabel *>(QStringLiteral("aboutTitle"));
-        if (!title) return;
-        const QPoint before = dialog->pos();
-        const QPointF local = title->rect().center();
-        const QPointF global = title->mapToGlobal(local.toPoint());
-        QMouseEvent press(QEvent::MouseButtonPress, local, global,
-                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-        QApplication::sendEvent(title, &press);
-        QMouseEvent move(QEvent::MouseMove, local + QPointF(40, 30), global + QPointF(40, 30),
-                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
-        QApplication::sendEvent(title, &move);
-        QMouseEvent release(QEvent::MouseButtonRelease, local, global + QPointF(40, 30),
-                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-        QApplication::sendEvent(title, &release);
-        moved = dialog->pos() == before + QPoint(40, 30);
-    });
     window.findChild<QAction *>(QStringLiteral("actAbout"))->trigger();
-    QVERIFY2(moved, "About dialog must move when dragging its static content");
+    auto *panel = window.findChild<QDialog *>(QStringLiteral("aboutDialog"));
+    QVERIFY(panel && panel->isVisible());
+    QCOMPARE(panel->windowType(), Qt::Popup);
+    QVERIFY(panel->width() <= 360);
+    QVERIFY(panel->height() <= 200);
+    const auto before = panel->pos();
+    window.move(window.pos() + QPoint(25, 20));
+    QCoreApplication::processEvents();
+    QCOMPARE(panel->pos(), before + QPoint(25, 20));
+    QTest::keyClick(panel, Qt::Key_Escape);
+    QVERIFY(!panel->isVisible());
 }
 
 void TestMainWindow2::chromeDoesNotOverlapReading()

@@ -8,11 +8,15 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QUrl>
 #include <QWheelEvent>
 #include <QWindow>
+#include <QShowEvent>
+#include <QHideEvent>
 #include <QApplication>
+#include <QSignalBlocker>
 
 namespace {
 
@@ -57,10 +61,19 @@ void ReadingView::setBook(std::shared_ptr<Book> book)
     m_book = std::move(book);
     m_hasBook = bool(m_book);
     m_chapter = 0;
-    if (m_hasBook)
-        loadChapter();
-    else
-        m_page.setText(QString());
+    m_pendingChapter = -1;
+    m_pendingPage = 0;
+    m_committedReady = false;
+    m_chapterError.clear();
+    m_page.setText(QString());
+    if (m_hasBook) {
+        if (m_book->chapterAvailable(0)) {
+            m_committedReady = true;
+            loadChapter();
+        } else {
+            goToChapter(0);
+        }
+    }
     update();
 }
 
@@ -87,13 +100,63 @@ void ReadingView::goToChapter(int index)
     const QVector<Chapter> &chapters = m_book->chapters();
     if (index < 0 || index >= chapters.size())
         return;
+    if (!m_book->chapterAvailable(index)) {
+        m_pendingChapter = index;
+        m_pendingPage = 0;
+        m_chapterError.clear();
+        emit chapterRequested(index);
+        update();
+        return;
+    }
+    m_pendingChapter = -1;
+    m_chapterError.clear();
+    m_committedReady = true;
     m_chapter = index;
     loadChapter();
     emit chapterChanged(index);
 }
 
+void ReadingView::setChapterReady(int index)
+{
+    if (index != m_pendingChapter || !m_book || !m_book->chapterAvailable(index))
+        return;
+    const int page = m_pendingPage;
+    goToChapter(index);
+    goToPage(page < 0 ? m_page.pageCount() - 1 : page);
+}
+
+void ReadingView::setChapterError(int index, const QString &error)
+{
+    if (index != m_pendingChapter)
+        return;
+    m_chapterError = error;
+    update();
+}
+
+void ReadingView::retryPendingChapter()
+{
+    if (m_pendingChapter < 0)
+        return;
+    m_chapterError.clear();
+    emit chapterRetryRequested(m_pendingChapter);
+    update();
+}
+
+void ReadingView::cancelPendingChapter()
+{
+    if (m_pendingChapter < 0)
+        return;
+    m_chapterError = tr("Cancelled — retry to continue");
+    emit chapterCancelRequested();
+    update();
+}
+
 void ReadingView::goToPage(int page)
 {
+    if (m_pendingChapter >= 0) {
+        m_pendingPage = page;
+        return;
+    }
     resetPixelScroll();
     if (m_page.goToPage(page)) {
         update();
@@ -103,6 +166,26 @@ void ReadingView::goToPage(int page)
 
 void ReadingView::pageUp()
 {
+    if (m_pendingChapter >= 0) {
+        const int target = m_pendingChapter - 1;
+        if (target < 0)
+            return;
+        QSignalBlocker transaction(this);
+        goToChapter(target);
+        if (m_pendingChapter >= 0) {
+            m_pendingPage = -1;
+            transaction.unblock();
+            emit chapterRequested(m_pendingChapter);
+        } else {
+            if (m_page.pageCount() > 0)
+                m_page.goToPage(m_page.pageCount() - 1);
+            transaction.unblock();
+            emit chapterChanged(m_chapter);
+            emit pageChanged(m_page.currentPage());
+            update();
+        }
+        return;
+    }
     if (!m_hasBook)
         return;
     if (m_page.prevPage()) {
@@ -113,6 +196,10 @@ void ReadingView::pageUp()
     }
     if (m_chapter > 0) {
         goToChapter(m_chapter - 1);
+        if (m_pendingChapter >= 0) {
+            m_pendingPage = -1;
+            return;
+        }
         if (m_page.pageCount() > 0)
             m_page.goToPage(m_page.pageCount() - 1);
         emit pageChanged(m_page.currentPage());
@@ -122,6 +209,10 @@ void ReadingView::pageUp()
 
 void ReadingView::pageDown()
 {
+    if (m_pendingChapter >= 0) {
+        goToChapter(m_pendingChapter + 1);
+        return;
+    }
     if (!m_hasBook)
         return;
     if (m_page.nextPage()) {
@@ -168,7 +259,7 @@ void ReadingView::refreshLayout()
     resetPixelScroll();
     m_page.setParams(toPageParams(m_settings));
     m_page.setViewSize(width(), height());
-    if (m_hasBook)
+    if (m_hasBook && m_committedReady)
         m_page.setText(m_book->chapterText(m_chapter));
     update();
 }
@@ -216,10 +307,20 @@ qreal ReadingView::currentLineStep() const
 
 bool ReadingView::scrollByPixels(qreal delta)
 {
-    if (!m_hasBook || m_page.pageCount() == 0)
+    if (!m_hasBook || m_pendingChapter >= 0 || m_page.pageCount() == 0)
         return false;
+    QSignalBlocker transaction(this);
     const int startPage = m_page.currentPage();
     const int startChapter = m_chapter;
+    const qreal startOffset = m_pixelOffset;
+    const auto restorePosition = [&] {
+        if (m_chapter != startChapter) {
+            m_chapter = startChapter;
+            loadChapter();
+        }
+        m_page.goToPage(startPage);
+        m_pixelOffset = startOffset;
+    };
     const qreal viewHeight = qMax<qreal>(20.0, height() - 2 * colonMargin(m_settings.font));
     qreal target = m_pixelOffset + delta;
 
@@ -227,6 +328,13 @@ bool ReadingView::scrollByPixels(qreal delta)
         if (!m_page.prevPage()) {
             if (m_chapter > 0) {
                 goToChapter(m_chapter - 1);
+                if (m_pendingChapter >= 0) {
+                    m_pendingPage = -1;
+                    restorePosition();
+                    transaction.unblock();
+                    emit chapterRequested(m_pendingChapter);
+                    return false;
+                }
                 if (m_page.pageCount() == 0) {
                     target = 0.0;
                     break;
@@ -257,6 +365,12 @@ bool ReadingView::scrollByPixels(qreal delta)
         if (m_chapter + 1 < m_book->chapters().size()) {
             target -= maxOffset;
             goToChapter(m_chapter + 1);
+            if (m_pendingChapter >= 0) {
+                restorePosition();
+                transaction.unblock();
+                emit chapterRequested(m_pendingChapter);
+                return false;
+            }
             if (m_page.pageCount() == 0)
                 break;
             m_page.goToPage(0);
@@ -285,6 +399,11 @@ bool ReadingView::scrollByPixels(qreal delta)
         || m_chapter != startChapter
         || !qFuzzyCompare(m_pixelOffset, target);
     m_pixelOffset = target;
+    transaction.unblock();
+    if (m_chapter != startChapter) {
+        emit chapterChanged(m_chapter);
+        emit pageChanged(m_page.currentPage());
+    }
     return changed;
 }
 
@@ -295,19 +414,49 @@ void ReadingView::paintEvent(QPaintEvent *)
     painter.setCompositionMode(QPainter::CompositionMode_Clear);
     painter.fillRect(rect(), Qt::transparent);
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    painter.setRenderHint(QPainter::Antialiasing);
+    const QRectF surface(rect());
+    constexpr qreal cornerRadius = 16.0;
+    QPainterPath surfacePath;
+    surfacePath.addRoundedRect(surface, cornerRadius, cornerRadius);
+    if (!m_roundTopCorners) {
+        // Join the visible menu with a straight edge; keep the bottom rounded.
+        QPainterPath topEdge;
+        topEdge.addRect(QRectF(0, 0, width(), qMin(cornerRadius, height() / 2.0)));
+        surfacePath = surfacePath.united(topEdge);
+    }
+    painter.setPen(Qt::NoPen);
     if (!m_bgPixmap.isNull())
         painter.setOpacity(bgOpacity);
     QColor bg = m_settings.bgColor;
     bg.setAlpha(m_settings.windowAlpha);
-    if (bg.alpha() > 0)
-        painter.fillRect(rect(), bg);
+    if (bg.alpha() > 0) {
+        painter.setBrush(bg);
+        painter.drawPath(surfacePath);
+    }
     if (!m_bgPixmap.isNull()) {
-        painter.drawPixmap(rect(), m_bgPixmap);
+        // A texture brush preserves antialiasing at the curved image edge;
+        // clipping a rectangular pixmap would produce a jagged outline.
+        QBrush imageBrush(m_bgPixmap);
+        QTransform imageTransform;
+        const QSizeF imageSize = m_bgPixmap.deviceIndependentSize();
+        imageTransform.scale(width() / imageSize.width(), height() / imageSize.height());
+        imageBrush.setTransform(imageTransform);
+        painter.setBrush(imageBrush);
+        painter.drawPath(surfacePath);
         painter.setOpacity(1.0);
     }
+    painter.setClipPath(surfacePath);
+    if (m_pendingChapter >= 0) {
+        painter.setPen(m_settings.textColor);
+        painter.drawText(rect().adjusted(12, 6, -12, -6), Qt::AlignTop | Qt::AlignRight,
+            m_chapterError.isEmpty() ? tr("Loading chapter…") : m_chapterError);
+    }
     if (!m_hasBook || m_page.pageCount() == 0) {
+        if (m_pendingChapter >= 0)
+            return;
         painter.setPen(QColor(140, 140, 140));
-        painter.drawText(rect(), Qt::AlignCenter, QStringLiteral("打开一本 TXT 小说开始阅读（Ctrl+O）"));
+        painter.drawText(rect(), Qt::AlignCenter, QStringLiteral("打开一本电子书开始阅读（Ctrl+O）"));
         return;
     }
     painter.setPen(m_settings.textColor);
@@ -343,9 +492,11 @@ void ReadingView::paintEvent(QPaintEvent *)
 void ReadingView::resizeEvent(QResizeEvent *event)
 {
     const qreal keep = m_page.progress();
+    const qreal keepOffset = m_pixelOffset;
     resetPixelScroll();
     m_page.setViewSize(width(), height());
     m_page.jumpToProgress(keep);
+    scrollByPixels(keepOffset);
     QWidget::resizeEvent(event);
     update();
     emit pageChanged(m_page.currentPage());
@@ -506,14 +657,16 @@ void ReadingView::keyPressEvent(QKeyEvent *event)
 
 void ReadingView::nextChapter()
 {
-    if (m_hasBook && m_chapter + 1 < m_book->chapters().size())
-        goToChapter(m_chapter + 1);
+    const int base = m_pendingChapter >= 0 ? m_pendingChapter : m_chapter;
+    if (m_hasBook && base + 1 < m_book->chapters().size())
+        goToChapter(base + 1);
 }
 
 void ReadingView::prevChapter()
 {
-    if (m_hasBook && m_chapter > 0)
-        goToChapter(m_chapter - 1);
+    const int base = m_pendingChapter >= 0 ? m_pendingChapter : m_chapter;
+    if (m_hasBook && base > 0)
+        goToChapter(base - 1);
 }
 
 void ReadingView::fontZoom(int delta)
@@ -561,6 +714,8 @@ bool ReadingView::findNext(const QString &keyword, bool forward)
         }
         for (const QPair<int, bool> &task : tasks) {
             const int ci = task.first;
+            if (!m_book->chapterAvailable(ci))
+                continue;
             const QString text = m_book->chapterText(ci);
             const int idx = task.second
                 ? (forward ? text.indexOf(keyword, cur.second)
@@ -592,8 +747,12 @@ void ReadingView::jumpToBookProgress(qreal progress)
     if (!m_hasBook)
         return;
     const qint64 total = m_book->totalCharCount();
-    if (total <= 0)
+    if (total <= 0) {
+        if (m_book->isOnline() && !m_book->chapters().isEmpty())
+            goToChapter(qBound(0, int(progress * m_book->chapters().size()),
+                               int(m_book->chapters().size()) - 1));
         return;
+    }
     const qint64 target = qBound<qint64>(0, qint64(progress * total), total - 1);
     const QVector<Chapter> &ch = m_book->chapters();
     int ci = 0;
@@ -621,7 +780,7 @@ qreal ReadingView::currentBookProgress() const
         return 0.0;
     const qint64 total = m_book->totalCharCount();
     if (total <= 0)
-        return 0.0;
+        return m_book->isOnline() ? qreal(m_chapter) / m_book->chapters().size() : 0.0;
     const QVector<Chapter> &ch = m_book->chapters();
     if (m_chapter < 0 || m_chapter >= ch.size())
         return 0.0;
@@ -642,6 +801,13 @@ int ReadingView::tagCount() const
 
 void ReadingView::onAutoPageTick()
 {
+    if (m_pendingChapter >= 0)
+        return;
+    if (m_book && m_book->isOnline() && !m_behavior.autoPageScrollMode
+        && m_page.currentPage() + 1 >= m_page.pageCount()) {
+        pageDown();
+        return;
+    }
     const bool advanced = m_behavior.autoPageScrollMode
         ? scrollByPixels(currentLineStep() * m_behavior.scrollStep)
         : m_page.nextPage();
@@ -657,14 +823,28 @@ void ReadingView::startAutoPage()
 {
     if (!m_autoPageTimer)
         return;
+    m_autoPageEnabled = true;
     m_autoPageTimer->setInterval(m_behavior.autoPageIntervalMs);
-    m_autoPageTimer->start();
+    if (isVisible()) m_autoPageTimer->start();
 }
 
 void ReadingView::stopAutoPage()
 {
+    m_autoPageEnabled = false;
     if (m_autoPageTimer)
         m_autoPageTimer->stop();
+}
+
+void ReadingView::hideEvent(QHideEvent *event)
+{
+    if (m_autoPageTimer) m_autoPageTimer->stop();
+    QWidget::hideEvent(event);
+}
+
+void ReadingView::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    if (m_autoPageEnabled) startAutoPage();
 }
 
 void ReadingView::toggleAutoPage()

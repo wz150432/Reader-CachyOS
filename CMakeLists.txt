@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(ReaderCachyOS VERSION 0.1.0 LANGUAGES CXX)
+project(ReaderCachyOS VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -9,6 +9,12 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Test Network)
 find_package(LibArchive REQUIRED)
 qt_standard_project_setup()
+set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
+set(CMAKE_BUILD_RPATH "$ORIGIN/../lib/reader")
+add_subdirectory(third_party/libmobi)
+
+add_executable(reader-control src/control/main.c)
+set_target_properties(reader-control PROPERTIES AUTOMOC OFF AUTORCC OFF C_STANDARD 99)
 
 qt_add_executable(reader
     src/main.cpp
@@ -22,6 +28,7 @@ qt_add_executable(reader
     src/app/TagsetDialog.cpp src/app/TagsetDialog.h
     src/app/RemoteControl.cpp src/app/RemoteControl.h
 )
+add_dependencies(reader reader-control)
 target_include_directories(reader PRIVATE src)
 target_link_libraries(reader PRIVATE reader_core Qt6::Widgets Qt6::Network)
 
@@ -31,6 +38,7 @@ add_library(reader_core STATIC
     src/core/TextCodec.cpp src/core/TextCodec.h
     src/core/ChapterParser.cpp src/core/ChapterParser.h
     src/core/Book.cpp src/core/Book.h
+    src/core/StructuredBook.cpp src/core/StructuredBook.h
     src/core/TextBook.cpp src/core/TextBook.h
     src/core/EpubBook.cpp src/core/EpubBook.h
     src/core/Page.cpp src/core/Page.h
@@ -39,9 +47,10 @@ add_library(reader_core STATIC
     src/core/Keyset.cpp src/core/Keyset.h
     src/core/NiriConfig.cpp src/core/NiriConfig.h
     src/core/NiriWindow.cpp src/core/NiriWindow.h
+    src/core/NiriClient.cpp src/core/NiriClient.h
 )
 target_include_directories(reader_core PUBLIC src)
-target_link_libraries(reader_core PUBLIC Qt6::Core Qt6::Gui LibArchive::LibArchive)
+target_link_libraries(reader_core PUBLIC Qt6::Core Qt6::Gui Qt6::Network LibArchive::LibArchive reader_mobi)
 
 qt_add_executable(tst_textcodec tests/tst_textcodec.cpp)
 target_link_libraries(tst_textcodec PRIVATE reader_core Qt6::Test)
@@ -216,3 +225,16 @@ qt_add_executable(tst_epubbook tests/tst_epubbook.cpp)
 target_link_libraries(tst_epubbook PRIVATE reader_core Qt6::Test Qt6::Widgets LibArchive::LibArchive)
 add_test(NAME epubbook COMMAND tst_epubbook)
 set_tests_properties(epubbook PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_ebookformats tests/tst_ebookformats.cpp)
+target_link_libraries(tst_ebookformats PRIVATE reader_core Qt6::Test Qt6::Widgets)
+add_test(NAME ebookformats COMMAND tst_ebookformats)
+set_tests_properties(ebookformats PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+qt_add_executable(tst_niriclient tests/tst_niriclient.cpp)
+target_link_libraries(tst_niriclient PRIVATE reader_core Qt6::Test)
+add_test(NAME niriclient COMMAND tst_niriclient)
+
+include(cmake/OnlineEngine.cmake)
+
+include(cmake/OnlineHost.cmake)

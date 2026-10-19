@@ -13,6 +13,7 @@ struct BookProgress
     int chapterIndex = 0;
     int pageIndex = 0;
     qint64 lastOpened = 0;
+    qreal pixelOffset = 0.0;
 };
 
 struct Bookmark

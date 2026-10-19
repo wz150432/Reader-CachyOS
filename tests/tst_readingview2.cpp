@@ -254,11 +254,20 @@ void TestReadingView2::wrappedParagraphRenderingKeepsLineGaps()
         view.render(&painter);
         painter.end();
 
+        // Judge visible ink over white, rather than counting transparent
+        // rounded corners (whose RGB channels are zero) as black text.
+        QImage flattened(img.size(), QImage::Format_RGB32);
+        flattened.fill(Qt::white);
+        {
+            QPainter background(&flattened);
+            background.drawImage(0, 0, img);
+        }
+
         int bandStart = -1;
         for (int y = 0; y < img.height(); ++y) {
             bool ink = false;
             for (int x = 0; x < img.width(); ++x) {
-                const QColor c = img.pixelColor(x, y);
+                const QColor c = flattened.pixelColor(x, y);
                 if (c.red() < 128 && c.green() < 128 && c.blue() < 128) {
                     ink = true;
                     break;

@@ -4,11 +4,11 @@ pkgname=reader-cachyos-git
 _version=0.1.0
 pkgver=CachyOS.r9.gf447113
 pkgrel=1
-pkgdesc="Offline TXT/EPUB/MOBI reader for CachyOS/Arch"
+pkgdesc="Offline TXT/EPUB/MOBI/AZW3/FB2 reader for CachyOS/Arch"
 arch=('x86_64')
 url='https://github.com/wz150432/Reader-CachyOS'
 license=('custom')
-depends=('qt6-base' 'libarchive')
+depends=('qt6-base' 'libarchive' 'zlib')
 makedepends=('cmake' 'git')
 conflicts=('reader')
 provides=('reader')
@@ -31,6 +31,10 @@ build() {
 
 package() {
     cd "${srcdir}/${pkgname}"
+    install -Dm755 build/lib/reader/libreader_mobi.so "${pkgdir}/usr/lib/reader/libreader_mobi.so"
+    install -Dm644 third_party/libmobi/COPYING "${pkgdir}/usr/share/licenses/${pkgname}/libmobi-LGPL-3.0.txt"
+    install -Dm644 third_party/libmobi/COPYING.GPL "${pkgdir}/usr/share/licenses/${pkgname}/libmobi-GPL-3.0.txt"
+    install -Dm755 build/reader-control "${pkgdir}/usr/bin/reader-control"
     install -Dm755 build/reader "${pkgdir}/usr/bin/reader"
     install -Dm644 packaging/reader.desktop \
         "${pkgdir}/usr/share/applications/reader.desktop"

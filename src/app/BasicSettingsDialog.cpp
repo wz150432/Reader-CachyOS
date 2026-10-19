@@ -36,6 +36,9 @@ BasicSettingsDialog::BasicSettingsDialog(Settings *settings, QWidget *parent)
     // m_mouseLeaveHide->setChecked(m_settings->behavior.mouseLeaveHideEnabled);
 
     auto *form = new QFormLayout;
+    form->setHorizontalSpacing(20);
+    form->setVerticalSpacing(12);
+    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     form->addRow(QStringLiteral("自动翻页间隔"), m_intervalSpin);
     form->addRow(QStringLiteral("自动翻页模式"), m_modeCombo);
     form->addRow(QStringLiteral("滚动速度（像素/步）"), m_scrollStepSpin);
@@ -44,6 +47,7 @@ BasicSettingsDialog::BasicSettingsDialog(Settings *settings, QWidget *parent)
     // form->addRow(QString(), m_mouseLeaveHide);
 
     auto *ok = new QPushButton(QStringLiteral("确定"), this);
+    ok->setDefault(true);
     auto *cancel = new QPushButton(QStringLiteral("取消"), this);
     connect(ok, &QPushButton::clicked, this, &BasicSettingsDialog::accept);
     connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
@@ -52,6 +56,8 @@ BasicSettingsDialog::BasicSettingsDialog(Settings *settings, QWidget *parent)
     buttons->addWidget(ok);
     buttons->addWidget(cancel);
     auto *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(20, 20, 20, 20);
+    layout->setSpacing(20);
     layout->addLayout(form);
     layout->addLayout(buttons);
 }

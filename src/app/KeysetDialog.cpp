@@ -1,6 +1,7 @@
 #include "app/KeysetDialog.h"
 #include <QAbstractItemView>
-#include <QDialogButtonBox>
+#include <QLabel>
+#include <QLineEdit>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QKeySequenceEdit>
@@ -41,71 +42,65 @@ static QString actionName(KeyAction a)
 KeysetDialog::KeysetDialog(Settings *settings, QWidget *parent)
     : QDialog(parent)
     , m_settings(settings)
+    , m_keyset(settings->keyset)
 {
     setWindowTitle(QStringLiteral("按键设置"));
     m_table = new QTableWidget(0, 2, this);
+    m_table->setObjectName(QStringLiteral("shortcutTable"));
+    m_table->verticalHeader()->hide();
+    m_table->verticalHeader()->setDefaultSectionSize(40);
+    m_table->setShowGrid(false);
+    m_table->setAlternatingRowColors(true);
     m_table->setHorizontalHeaderLabels({QStringLiteral("功能"), QStringLiteral("快捷键")});
-    m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     reload();
 
     auto *reset = new QPushButton(QStringLiteral("恢复默认"), this);
     auto *ok = new QPushButton(QStringLiteral("确定"), this);
+    ok->setDefault(true);
     auto *cancel = new QPushButton(QStringLiteral("取消"), this);
     connect(reset, &QPushButton::clicked, this, &KeysetDialog::restoreDefaults);
     connect(ok, &QPushButton::clicked, this, &KeysetDialog::accept);
     connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
-    connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int row, int column) {
-        if (column != 1)
-            return;
-        m_table->setCurrentCell(row, 1);
-        editShortcut();
-    });
     auto *buttons = new QHBoxLayout;
     buttons->addWidget(reset);
     buttons->addStretch();
     buttons->addWidget(ok);
     buttons->addWidget(cancel);
     auto *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(12);
+    auto *hint = new QLabel(QStringLiteral("点击快捷键一栏，直接按下新的按键组合。确定后保存。"), this);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
     layout->addWidget(m_table);
     layout->addLayout(buttons);
-    resize(420, 480);
+    resize(560, 520);
 }
 
 void KeysetDialog::reload()
 {
-    const QList<KeyAction> actions = m_settings->keyset.actions();
+    const QList<KeyAction> actions = m_keyset.actions();
     m_table->setRowCount(actions.size());
     int row = 0;
     for (const KeyAction a : actions) {
         auto *name = new QTableWidgetItem(actionName(a));
-        auto *seq = new QTableWidgetItem(m_settings->keyset.shortcut(a).toString());
         name->setData(Qt::UserRole, int(a));
         m_table->setItem(row, 0, name);
-        m_table->setItem(row, 1, seq);
+        auto *edit = new QKeySequenceEdit(m_keyset.shortcut(a), m_table);
+        edit->setMaximumSequenceLength(1);
+        edit->setFinishingKeyCombinations({});
+        edit->setAccessibleName(QStringLiteral("%1的快捷键").arg(actionName(a)));
+        if (auto *input = edit->findChild<QLineEdit *>())
+            input->setPlaceholderText(QStringLiteral("按下快捷键"));
+        connect(edit, &QKeySequenceEdit::keySequenceChanged, this, [this, a](const QKeySequence &sequence) {
+            if (!sequence.isEmpty())
+                m_keyset.setShortcut(a, sequence);
+        });
+        m_table->setCellWidget(row, 1, edit);
         ++row;
-    }
-}
-
-void KeysetDialog::editShortcut()
-{
-    const int row = m_table->currentRow();
-    if (row < 0)
-        return;
-    const KeyAction a = static_cast<KeyAction>(m_table->item(row, 0)->data(Qt::UserRole).toInt());
-    QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("设置快捷键"));
-    auto *edit = new QKeySequenceEdit(m_settings->keyset.shortcut(a), &dlg);
-    auto *box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    auto *layout = new QVBoxLayout(&dlg);
-    layout->addWidget(edit);
-    layout->addWidget(box);
-    if (dlg.exec() == QDialog::Accepted && !edit->keySequence().isEmpty()) {
-        m_settings->keyset.setShortcut(a, edit->keySequence());
-        reload();
     }
 }
 
@@ -114,12 +109,13 @@ void KeysetDialog::restoreDefaults()
     if (QMessageBox::question(this, QStringLiteral("恢复默认"),
             QStringLiteral("确定将快捷键恢复为默认设置？")) != QMessageBox::Yes)
         return;
-    m_settings->keyset.reset();
+    m_keyset.reset();
     reload();
 }
 
 void KeysetDialog::accept()
 {
+    m_settings->keyset = m_keyset;
     m_settings->save();
     QDialog::accept();
 }

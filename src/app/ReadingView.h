@@ -18,6 +18,7 @@ public:
     explicit ReadingView(QWidget *parent = nullptr);
     void setBook(std::shared_ptr<Book> book);
     void setSettings(const DisplaySettings &settings);
+    void setTopCornersRounded(bool rounded) { m_roundTopCorners = rounded; update(); }
     void setKeyset(const Keyset &keyset) { m_keyset = keyset; }
     void setBehavior(const BehaviorSettings &behavior) { m_behavior = behavior; }
     void setTags(const QVector<TagItem> &tags) { m_tags = tags; update(); }
@@ -26,8 +27,15 @@ public:
     int tagCount() const;
     void startAutoPage();
     void stopAutoPage();
-    bool isAutoPaging() const { return m_autoPageTimer && m_autoPageTimer->isActive(); }
+    bool isAutoPaging() const { return m_autoPageEnabled; }
     void toggleAutoPage();
+    int pendingChapter() const { return m_pendingChapter; }
+    int pendingPage() const { return m_pendingPage; }
+    bool committedChapterReady() const { return m_committedReady; }
+    void setChapterReady(int index);
+    void setChapterError(int index, const QString &error);
+    void retryPendingChapter();
+    void cancelPendingChapter();
     int currentChapter() const { return m_chapter; }
     int currentPage() const { return m_page.currentPage(); }
     int pageCount() const { return m_page.pageCount(); }
@@ -52,6 +60,9 @@ public:
     int currentMatchEnd() const { return m_matchEnd; }
 
 signals:
+    void chapterRequested(int index);
+    void chapterRetryRequested(int index);
+    void chapterCancelRequested();
     void chapterChanged(int index);
     void pageChanged(int index);
     void searchRequested();
@@ -64,6 +75,8 @@ signals:
     void behaviorChanged(const reader::BehaviorSettings &behavior);
 
 protected:
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
@@ -98,10 +111,16 @@ private:
     QVector<TagItem> m_tags;
     Page m_page;
     QTimer *m_autoPageTimer = nullptr;
+    bool m_autoPageEnabled = false;
     QPixmap m_bgPixmap;
     QString m_bgImagePath;
     int m_chapter = 0;
+    int m_pendingChapter = -1;
+    int m_pendingPage = 0;
+    bool m_committedReady = false;
+    QString m_chapterError;
     bool m_hasBook = false;
+    bool m_roundTopCorners = true;
     int m_matchStart = -1;
     int m_matchEnd = -1;
     bool m_leftPressed = false;

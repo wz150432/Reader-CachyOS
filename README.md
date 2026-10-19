@@ -4,16 +4,17 @@
 
 ## 这是什么
 
-Reader CachyOS 是一款**完全离线**的桌面阅读器，功能设计参考 [binbyu/Reader](https://github.com/binbyu/Reader) 的本地阅读部分，使用 C++17 + Qt 6 从零重写，原生运行于 CachyOS / Arch Linux（Wayland / niri）。
+Reader CachyOS 是一款**默认离线、可选在线阅读**的桌面阅读器，功能设计参考 [binbyu/Reader](https://github.com/binbyu/Reader) 的本地阅读部分，使用 C++17 + Qt 6 从零重写，原生运行于 CachyOS / Arch Linux（Wayland / niri）。
 
-不做在线书源、不做联网爬虫，只专注于一件事：**打开一本书，安静地读完它。**
+基础程序保留本地阅读体验；在线搜索和按章阅读通过独立、需明确安装的可选组件提供。未安装或停用组件时，启动和取消安装均不会请求书源网络。
 
 ## 功能
 
 **阅读格式**
 - TXT（自动识别 UTF-8 / UTF-16 / GB2312 / GBK 等编码）
+- MOBI / AZW / AZW3（未加密，支持 PalmDOC、HUFF/CDIC、KF8）
+- FB2（读取书名、嵌套章节与正文，以文字阅读为主）
 - EPUB（EPUB 2 / 3 文字阅读，按书内顺序加载章节，支持目录标题；不保留图片和复杂排版）
-- MOBI / AZW / AZW3：暂未实现
 
 **阅读体验**
 - 翻页：鼠标点击、滚轮、方向键、PageUp / PageDown
@@ -30,7 +31,7 @@ Reader CachyOS 是一款**完全离线**的桌面阅读器，功能设计参考 
 - 所有快捷键可自定义
 
 **系统集成**
-- 文件关联：双击 txt / epub 直接打开
+- 文件关联：双击 txt / epub / mobi / azw3 / fb2 直接打开
 - 最小化到系统托盘
 - 阅读记录列表不设数量上限、阅读进度自动记忆；文件菜单直接显示书籍列表，右键书名就地确认删除记录，保留本地书籍文件，删除或取消时列表保持展开
 
@@ -41,7 +42,7 @@ Reader CachyOS 是一款**完全离线**的桌面阅读器，功能设计参考 
 sudo pacman -S qt6-base libarchive cmake
 
 # 构建
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DREADER_BUILD_ONLINE_ENGINE=OFF
 cmake --build build -j$(nproc)
 
 # 运行
@@ -124,3 +125,112 @@ packaging/         PKGBUILD、desktop 文件、图标、安装脚本
 本项目的功能与交互设计致敬并参考 [binbyu/Reader](https://github.com/binbyu/Reader)（作者：binbyu）。原项目是一款优秀的 Windows 桌面阅读器，本项目仅作个人学习与使用，将其中的本地阅读体验带到 Linux 原生环境。
 
 感谢 binbyu 的开源分享。
+
+
+### 性能与依赖
+
+隐藏窗口时暂停自动翻页，恢复窗口后继续；后台不轮询鼠标或窗口位置。
+Niri 全局快捷键优先使用独立的 `reader-control` 小程序，只发送本地指令，不初始化 Qt 图形环境，也不增加常驻进程。
+Niri 使用本地事件订阅及异步命令，隐藏时断开订阅；阅读进度最多每 300 ms
+写盘一次，切书和退出时立即保存。窗口和菜单栏状态仍会恢复。
+
+MOBI/AZW3 使用单独的 libmobi 共享库（LGPL-3.0-or-later），固定版本源码及
+构建适配位于 third_party/libmobi，不需要联网构建或安装 Calibre。
+构建需要 C/C++ 编译器、Qt 6、libarchive 和 zlib。
+发布时必须包含 bin/reader-control、lib/reader/libreader_mobi.so 和对应许可证；请使用安装脚本，
+不要单独复制 reader 可执行文件。DRM 书籍会明确提示，图片、复杂版式和扫描书不在
+文字导入功能范围内。
+
+
+## 可选在线小说阅读
+
+“文件 → 在线阅读”打开依附菜单栏的紧凑面板，点击外部或按 Esc 收起。
+组件未安装时先显示安装面板，只有点击“安装”才下载；安装成功后自动关闭安装面板并进入在线阅读。
+源码构建未传入元数据时仅支持本地安装。点击“本地安装…”依次选择 `.json` 和对应 `.tar.gz`，
+确认后进行大小、SHA-256、解压和协议版本校验。
+取消选择或取消确认不会联网。组件停用、卸载入口在组件管理器内；卸载组件保留书源和缓存。
+组件包只能来自官方 HTTPS GitHub Release 地址；自定义书源只提供内容，不能提供可执行程序。
+
+内置 10 个书源：中文维基文库、新笔趣阁、笔趣阁5200、笔趣阁365、奇书侠、书城网、书本网、久久小说，以及 biquhua.com、biquche.com 两个备用站点。
+默认“全部书源”可一起搜索所有已启用书源，也可选择单个书源；输入书名或作者点击搜索，请求中同一按钮变为“取消”。聚合搜索最多并发 3 个书源，部分失败不影响其他结果，点选结果时使用其原始书源。
+搜索结果左列书名、右列作者，中间以固定竖线分隔，长文字可悬停查看完整内容。
+点击一行的任意一列进入版本或章节列表，再点击“开始阅读”；“返回结果”回到原列表。
+在线面板不显示网址输入和独立缓存列表，已读书籍统一从“文件”的阅读记录打开。
+“更多”提供书源和组件管理。在线和本地书籍使用相同正文界面；Ctrl+R 在后台刷新在线目录，或重新载入本地文件，不弹出独立阅读窗口。
+正文可按住拖动窗口；各弹层、菜单、设置、确认框及文件／颜色选择框依附阅读器，随主窗口移动和隐藏；空白、普通标题文字区域可拖动，输入、按钮和列表选择保持正常操作。
+网站实测记录见 [书源兼容性](docs/online-sources.md)。
+目录按章节估算进度。每次先取当前章，再依次缓存其后**恰好 3 个存在的章节**，不会下载整本书。
+切章、重试和取消均有界面操作；在线书籍搜索仅查已缓存章节。已缓存内容在离线、组件停用或缺失时仍可从阅读记录打开，
+未缓存章节会显示安装/启用或重试提示。书签和进度保存在本地；刷新目录若会丢失当前章节或书签对应的 URL 会保留旧目录并提示。
+
+数据位于 `${XDG_DATA_HOME:-$HOME/.local/share}/Reader/Reader/online/`：`component/` 放组件，
+`sources.json` 放书源，`books/` 放目录清单与章节缓存。Cookie 和请求头只保存在私有权限的书源文件中，
+不写日志或命令参数。请仅对有权访问的内容配置凭据，并保留来源链接与相关作品授权信息。
+
+### 自定义 HTML / XPath 书源
+
+在线阅读 → 更多 → 管理书源：内置书源不可覆盖，可“复制”为自定义书源，或“新建”空白书源。
+每个书源都可启用/停用，表单支持以下字段：
+
+| 范围 | 字段与含义 |
+| --- | --- |
+| 基本 | `id`、`name`、`kind=html`、`baseUrl`、`enabled` |
+| 搜索请求 | `searchUrl`、`searchMethod=GET/POST`、`searchBody`；搜索模板支持 `{keyword}` 与 `{page}` |
+| 搜索结果 | `resultXPath` 定位每个结果；`titleXPath`、`linkXPath`、`authorXPath` 相对每个结果取值 |
+| 目录 | `tocUrlXPath` 从作品页定位目录；`chapterXPath` 定位章节链接；`tocNextXPath` 定位下一目录页；`reverseToc` 反转目录 |
+| 正文 | `contentXPath`、`removeXPath`、`contentNextXPath`；移除脚本、样式、导航及指定节点，保留段落和换行 |
+| 请求 | `encoding=auto/UTF-8/GB18030`、`cookie`、JSON 对象 `headers`、`intervalMs`（默认 1000，最低 500） |
+
+例如结果容器 `//div[@class='result']`、相对标题 `.//a`、链接 `.//a/@href`、
+章节 `//div[@id='list']//a`、正文 `//div[@id='content']`。相对链接基于最终响应 URL 解析。
+没有 `searchUrl` 的书源不能在在线阅读面板搜索，可在管理器内用网址测试规则。
+先保存检查字段与 XPath，再用“测试”执行搜索/目录/所选单章预览，
+确认标题、链接、正文和分页规则正确；预览不预取后续章。反爬验证或失效规则会显示错误，不绕过登录或验证码。
+
+每请求默认超时 20 秒、正文响应最多 8 MiB；正文分页最多 20 页，目录最多 100 页及 20,000 个去重章节。
+跨站重定向不携带自定义 Cookie/认证头。网页结构变化可能需要调整规则。
+
+### 独立组件构建、导入与验证
+
+基础构建只需要现有 Qt 6、libarchive、zlib 和编译工具，不增加 libxml2 开发依赖。
+现有 libarchive 可能间接依赖 libxml2 运行库；可选解析器单独携带私有 libxml2 及许可证。
+在 Arch/CachyOS 上构建可选组件另需 `libxml2` 开发文件（`sudo pacman -S libxml2`）。
+
+```bash
+# 基础程序：默认 OFF，明确写出便于核对
+cmake -S . -B build-online-base -DCMAKE_BUILD_TYPE=Release -DREADER_BUILD_ONLINE_ENGINE=OFF
+cmake --build build-online-base -j3
+
+# 独立组件：版本必须与元数据和真实 hello 一致
+cmake -S . -B build-online-engine -DCMAKE_BUILD_TYPE=Release \
+  -DREADER_BUILD_ONLINE_ENGINE=ON -DREADER_ONLINE_VERSION=0.1.0
+cmake --build build-online-engine --target reader-online tst_onlineengine -j3
+python3 packaging/build-online-component.py \
+  --engine build-online-engine/reader-online --base build-online-base/reader \
+  --version 0.1.0 --app-version 0.1.0 --output-dir release
+# 生成 release/reader-online-0.1.0-linux-x86_64.tar.gz 和同名 .json
+# 然后在“文件 → 在线阅读 → 本地安装…”选择上述 JSON 和压缩包
+
+# 将实际元数据嵌入基础程序（本地空 URL 仍禁用远程下载）
+cmake -S . -B build-online-base -DREADER_BUILD_ONLINE_ENGINE=OFF \
+  -DREADER_ONLINE_METADATA="$PWD/release/reader-online-0.1.0-linux-x86_64.json"
+cmake --build build-online-base -j3
+
+python3 -m unittest discover -s tests -p test_online_packaging.py
+QT_QPA_PLATFORM=offscreen ctest --test-dir build-online-base --output-on-failure
+READER_ONLINE_ARCHIVE="$PWD/release/reader-online-0.1.0-linux-x86_64.tar.gz" \
+READER_ONLINE_MANIFEST="$PWD/release/reader-online-0.1.0-linux-x86_64.json" \
+  build-online-base/tst_onlineartifact
+# 显式联网烟测：两个作品、真实安装组件、当前+后3章、停用组件后的缓存重开
+READER_ONLINE_LIVE=1 \
+READER_ONLINE_ARCHIVE="$PWD/release/reader-online-0.1.0-linux-x86_64.tar.gz" \
+READER_ONLINE_MANIFEST="$PWD/release/reader-online-0.1.0-linux-x86_64.json" \
+  build-online-base/tst_onlineartifact
+```
+
+`packaging/build-release.sh [包版本]` 在本地先构建并验证独立组件，再构建与测试基础 `.pkg.tar.zst`，
+输出组件、元数据、源码和 `SHA256SUMS`；基础包内没有 `reader-online`。源码快照排除构建目录、release、graft 和 `.superpowers` 工作记录。
+没有指定真实发布 URL 时，这是可本地导入的发布产物。公开的一键下载还需维护者发布真实附件，
+然后以该附件的官方 HTTPS URL 设置 `READER_ONLINE_URL` 重新构建基础包；生成器的 `--url` 也遵循相同验证。
+脚本不会上传。元数据中的 `appVersion` 必须与程序版本一致，当前为 `0.1.0`；组件只支持 Linux x86_64，
+依赖系统 Qt 6/基础程序运行库，不是跨发行版静态二进制。

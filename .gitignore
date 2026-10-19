@@ -2,6 +2,8 @@ build/
 build-*/
 *.user
 .cache/
+__pycache__/
+*.py[cod]
 Reader-CachyOS/
 
 # Generated packaging artifacts

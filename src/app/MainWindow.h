@@ -3,6 +3,7 @@
 #include <QList>
 #include <QPlainTextEdit>
 #include <QRect>
+#include <QPointer>
 #include <memory>
 #include "core/Book.h"
 #include "core/Cache.h"
@@ -18,14 +19,23 @@ class QWidgetAction;
 
 namespace reader {
 
+class MenuPanel;
 class ReadingView;
 class RemoteControl;
+class NiriClient;
+class OnlineComponentManager;
+class OnlineEngineBridge;
+class OnlineReadingController;
+class BookSourceStore;
+class OnlineLibraryDialog;
+class OnlineComponentDialog;
 
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 public:
     explicit MainWindow(QWidget *parent = nullptr);
+    ~MainWindow() override;
     void openBook(const QString &path);
     void openLastRead();
     QString currentBookTitle() const;
@@ -55,6 +65,8 @@ public:
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void changeEvent(QEvent *event) override;
 
@@ -68,6 +80,13 @@ private slots:
 
 private:
     void buildMenus();
+    void showOnlineReading();
+    void ensureOnlineLibrary();
+    void refreshCurrentBook();
+    void showOnlineComponent();
+    void requestOnlineChapter(int index);
+    void remapOnlineProgress(const QString &,const QStringList &,const QStringList &);
+    void updateChromeSpacing();
     void populateToc();
     void populateOpenMenu(QMenu *menu);
     void refreshOpenMenu();
@@ -97,6 +116,19 @@ private:
     void leaveEditMode();
     bool saveEditMode();
     bool leaveEditModeIfActive();
+    OnlineComponentManager *m_onlineComponent = nullptr;
+    OnlineEngineBridge *m_onlineBridge = nullptr;
+    OnlineReadingController *m_onlineController = nullptr;
+    std::unique_ptr<BookSourceStore> m_onlineSources;
+    QPointer<OnlineLibraryDialog> m_onlineLibrary;
+    QPointer<OnlineComponentDialog> m_onlineComponentDialog;
+    QPointer<MenuPanel> m_aboutPanel;
+    bool m_openOnlineAfterInstall = false;
+    bool m_restoringOnline = false;
+    int m_onlineRestoreChapter = -1;
+    int m_onlineRestorePage = 0;
+    qreal m_onlineRestorePixel = 0;
+    QString m_onlineRoot;
     ReadingView *m_view = nullptr;
     QMenuBar *m_dragMenuBar = nullptr;
     QTreeWidget *m_toc = nullptr;
@@ -107,6 +139,10 @@ private:
     QSystemTrayIcon *m_tray = nullptr;
     RemoteControl *m_control = nullptr;
     QTimer *m_mouseWatchTimer = nullptr;
+    QTimer *m_progressSaveTimer = nullptr;
+    QTimer *m_niriSettingsTimer = nullptr;
+    NiriClient *m_niriClient = nullptr;
+    bool m_restoringNiriPosition = false;
     QList<QWidget *> m_resizeGrips;
     QRect m_hiddenGeometry;
     bool m_topHintShown = false;
@@ -114,6 +150,8 @@ private:
     bool m_hiddenByMouseLeave = false;
     bool m_globalHideBindReady = false;
     bool m_niriRuleReady = false;
+    int m_globalHideSyncSerial = 0;
+    int m_niriRuleSyncSerial = 0;
     bool m_positioningWindow = false;
     int m_niriRestoreSerial = 0;
     QString m_titleBeforePositioning;

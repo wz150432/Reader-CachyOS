@@ -14,10 +14,18 @@
 #include <QAbstractButton>
 #include <QPushButton>
 #include <QProcess>
+#include <QLocalServer>
+#include <QLocalSocket>
+#include <QElapsedTimer>
+#include <QScopeGuard>
 #include <QWidgetAction>
 #include <QTreeWidget>
 #include <QTimer>
 #include "app/ReadingView.h"
+#include "app/KeysetDialog.h"
+#include <QKeySequenceEdit>
+#include <QTableWidget>
+#include <QMouseEvent>
 #include "app/MainWindow.h"
 #include "core/Cache.h"
 
@@ -27,6 +35,10 @@ class TestMainWindow2 : public QObject
 {
     Q_OBJECT
 private slots:
+    void niriExitDoesNotBlock();
+    void progressWritesCoalescedAndFlushed();
+    void restartRestoresPageAndScroll();
+    void processExitRestoresProgress();
     void addBookmarkPersists();
     void resetSettingsRestoresDefaults();
     void clearRecentMenuClearsRecentList();
@@ -42,8 +54,147 @@ private slots:
     void mouseLeaveHideHotkeyToggles();
     void editModeCtrlEToggles();
     void aboutActionOpensProjectDialog();
+    void shortcutCapturedInlineAndCancelDiscards();
+    void aboutPanelFollowsMenuBar();
+    void chromeDoesNotOverlapReading();
     void remoteShortcutDoesNotLaunchReaderWithoutInstance();
+    void remoteCommandsDoNotInitializeGraphics_data();
+    void remoteCommandsDoNotInitializeGraphics();
 };
+
+void TestMainWindow2::niriExitDoesNotBlock()
+{
+    QTemporaryDir dir;
+    QLocalServer server;
+    const QString socketPath = dir.filePath("niri.sock");
+    QVERIFY(server.listen(socketPath));
+    const QByteArray previous = qgetenv("NIRI_SOCKET");
+    const auto restoreEnvironment = qScopeGuard([&] {
+        if (previous.isNull()) qunsetenv("NIRI_SOCKET");
+        else qputenv("NIRI_SOCKET", previous);
+    });
+    qputenv("NIRI_SOCKET", socketPath.toUtf8());
+    connect(&server, &QLocalServer::newConnection, &server, [&] {
+        auto *socket = server.nextPendingConnection();
+        connect(socket, &QLocalSocket::readyRead, socket, [socket] {
+            const QByteArray request = socket->readAll();
+            if (!request.contains("EventStream")) return;
+            socket->write("{\"Ok\":\"Handled\"}\n");
+            socket->write(QStringLiteral("{\"WindowsChanged\":{\"windows\":[{\"id\":7,\"pid\":%1,\"app_id\":\"reader\",\"is_floating\":true,\"layout\":{\"tile_pos_in_workspace_view\":[123,234]}}]}}\n")
+                              .arg(QCoreApplication::applicationPid()).toUtf8());
+        });
+    });
+    MainWindow window;
+    window.show();
+    QTest::qWait(50);
+    QElapsedTimer timer;
+    timer.start();
+    window.quitApplication();
+    QVERIFY2(timer.elapsed() < 100, "exit must not synchronously wait on compositor IPC");
+    Settings saved;
+    saved.load();
+    QVERIFY(saved.hasNiriFloatingPosition);
+    QCOMPARE(saved.niriFloatingPosition, QPoint(123, 234));
+}
+
+void TestMainWindow2::progressWritesCoalescedAndFlushed()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath("throttle.txt");
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write(QStringLiteral("正文内容\n").repeated(2000).toUtf8());
+    file.close();
+    MainWindow window;
+    window.show();
+    window.openBook(path);
+    auto *view = window.findChild<ReadingView *>();
+    QVERIFY(view);
+    view->lineDown();
+    view->lineDown();
+    Cache cache;
+    cache.load();
+    QVERIFY(cache.progress(path));
+    QCOMPARE(cache.progress(path)->pixelOffset, 0.0);
+    QTRY_VERIFY_WITH_TIMEOUT(([&] { cache.load(); return cache.progress(path)->pixelOffset > 0; })(), 1500);
+    view->lineDown();
+    window.quitApplication();
+    cache.load();
+    QCOMPARE(cache.progress(path)->pixelOffset, view->pixelOffset());
+}
+
+void TestMainWindow2::processExitRestoresProgress()
+{
+    QTemporaryDir dir;
+    const QString bookPath = dir.filePath(QStringLiteral("book.txt"));
+    QFile book(bookPath);
+    QVERIFY(book.open(QIODevice::WriteOnly));
+    QString text = QStringLiteral("第1章 测试\n");
+    for (int i = 0; i < 800; ++i)
+        text += QStringLiteral("退出重开测试正文，第%1行。\n").arg(i);
+    book.write(text.toUtf8());
+    book.close();
+    QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("XDG_DATA_HOME"), dir.filePath("data"));
+    environment.insert(QStringLiteral("XDG_CONFIG_HOME"), dir.filePath("config"));
+    environment.insert(QStringLiteral("XDG_RUNTIME_DIR"), dir.path());
+    environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+    environment.remove(QStringLiteral("NIRI_SOCKET"));
+    for (const QString &mode : {QStringLiteral("save"), QStringLiteral("resume")}) {
+        QProcess process;
+        process.setProcessEnvironment(environment);
+        process.start(QCoreApplication::applicationFilePath(),
+                      {QStringLiteral("--progress-session"), bookPath, mode});
+        QVERIFY(process.waitForStarted());
+        QVERIFY(process.waitForFinished(10000));
+        QCOMPARE(process.exitCode(), 0);
+    }
+    QFile saved(dir.filePath("save.txt"));
+    QFile restored(dir.filePath("resume.txt"));
+    QVERIFY(saved.open(QIODevice::ReadOnly));
+    QVERIFY(restored.open(QIODevice::ReadOnly));
+    const QByteArray expected = saved.readAll();
+    QVERIFY(expected.startsWith("3 "));
+    QVERIFY(expected.endsWith(" 1"));
+    QCOMPARE(restored.readAll(), expected);
+}
+
+void TestMainWindow2::restartRestoresPageAndScroll()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QStringLiteral("long.txt"));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    QString text = QStringLiteral("第1章 测试\n");
+    for (int i = 0; i < 800; ++i)
+        text += QStringLiteral("这是用于恢复阅读位置的长篇正文，第%1行。\n").arg(i);
+    file.write(text.toUtf8());
+    file.close();
+    int page;
+    qreal offset;
+    {
+        MainWindow w;
+        w.show();
+        QTest::qWait(30);
+        w.openBook(path);
+        auto *view = w.findChild<ReadingView *>();
+        QVERIFY(view);
+        view->goToPage(3);
+        view->lineDown();
+        page = view->currentPage();
+        offset = view->pixelOffset();
+        QVERIFY(page > 0);
+        QVERIFY(offset > 0);
+    }
+    MainWindow resume;
+    resume.openLastRead();
+    resume.show();
+    QTest::qWait(30);
+    auto *view = resume.findChild<ReadingView *>();
+    QVERIFY(view);
+    QCOMPARE(view->currentPage(), page);
+    QCOMPARE(view->pixelOffset(), offset);
+}
 
 void TestMainWindow2::remoteShortcutDoesNotLaunchReaderWithoutInstance()
 {
@@ -66,9 +217,51 @@ void TestMainWindow2::remoteShortcutDoesNotLaunchReaderWithoutInstance()
     QCOMPARE(process.exitCode(), 1);
 }
 
+void TestMainWindow2::remoteCommandsDoNotInitializeGraphics_data()
+{
+    QTest::addColumn<QString>("binary");
+    QTest::addColumn<QString>("argument");
+    QTest::addColumn<QByteArray>("command");
+    for (const QString &binary : {QStringLiteral("reader"), QStringLiteral("reader-control")}) {
+        QTest::newRow(qPrintable(binary + QStringLiteral("-toggle-hide")))
+            << binary << QStringLiteral("--toggle-hide") << QByteArray("toggle-hide");
+        QTest::newRow(qPrintable(binary + QStringLiteral("-hide")))
+            << binary << QStringLiteral("--hide") << QByteArray("hide");
+        QTest::newRow(qPrintable(binary + QStringLiteral("-show")))
+            << binary << QStringLiteral("--show") << QByteArray("show");
+    }
+}
+
+void TestMainWindow2::remoteCommandsDoNotInitializeGraphics()
+{
+    QFETCH(QString, binary);
+    QFETCH(QString, argument);
+    QFETCH(QByteArray, command);
+    QTemporaryDir runtimeDir;
+    QVERIFY(runtimeDir.isValid());
+    QLocalServer server;
+    QVERIFY(server.listen(runtimeDir.filePath(QStringLiteral("reader-control.sock"))));
+    QProcess process;
+    auto environment = QProcessEnvironment::systemEnvironment();
+    environment.insert(QStringLiteral("XDG_RUNTIME_DIR"), runtimeDir.path());
+    // A control-only invocation must work even without a usable display plugin.
+    environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("reader-test-no-display"));
+    process.setProcessEnvironment(environment);
+    process.start(QCoreApplication::applicationDirPath() + QLatin1Char('/') + binary, {argument});
+    QVERIFY(process.waitForStarted());
+    QVERIFY(process.waitForFinished(1500));
+    QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+    QCOMPARE(process.exitCode(), 0);
+    QVERIFY(server.waitForNewConnection(500));
+    auto *socket = server.nextPendingConnection();
+    QVERIFY(socket->bytesAvailable() || socket->waitForReadyRead(500));
+    QCOMPARE(socket->readAll(), command);
+}
+
 void TestMainWindow2::aboutActionOpensProjectDialog()
 {
     MainWindow w;
+    w.show();
     QAction *about = nullptr;
     for (QAction *action : w.menuBar()->actions()) {
         if (action->text() == QStringLiteral("关于"))
@@ -85,7 +278,7 @@ void TestMainWindow2::aboutActionOpensProjectDialog()
             return;
         auto *link = dialog->findChild<QLabel *>(QStringLiteral("projectLink"));
         auto *icon = dialog->findChild<QLabel *>(QStringLiteral("aboutIcon"));
-        sawDialog = link && link->text().contains(QStringLiteral("https://github.com/wz150432/Reader-CachyOS"))
+        sawDialog = dialog->isVisible() && link && link->text().contains(QStringLiteral("https://github.com/wz150432/Reader-CachyOS"))
             && icon && !icon->pixmap(Qt::ReturnByValue).isNull();
         const QString screenshotPath = qEnvironmentVariable("READER_ABOUT_SCREENSHOT");
         if (!screenshotPath.isEmpty())
@@ -93,7 +286,70 @@ void TestMainWindow2::aboutActionOpensProjectDialog()
         dialog->reject();
     });
     about->trigger();
-    QVERIFY(sawDialog);
+    QTRY_VERIFY(sawDialog);
+}
+
+void TestMainWindow2::shortcutCapturedInlineAndCancelDiscards()
+{
+    Settings settings;
+    const QKeySequence original = settings.keyset.shortcut(KeyAction::PageUp);
+    KeysetDialog dialog(&settings);
+    dialog.show();
+    auto *table = dialog.findChild<QTableWidget *>();
+    QVERIFY(table);
+    auto *editor = qobject_cast<QKeySequenceEdit *>(table->cellWidget(0, 1));
+    QVERIFY2(editor, "Shortcut must be captured in the table without a popup");
+    editor->setFocus();
+    QTest::keyClick(editor, Qt::Key_J, Qt::ControlModifier);
+    QCOMPARE(editor->keySequence(), QKeySequence(QStringLiteral("Ctrl+J")));
+    QCOMPARE(settings.keyset.shortcut(KeyAction::PageUp), original);
+    dialog.reject();
+    QCOMPARE(settings.keyset.shortcut(KeyAction::PageUp), original);
+
+    KeysetDialog accepted(&settings);
+    accepted.show();
+    table = accepted.findChild<QTableWidget *>();
+    editor = qobject_cast<QKeySequenceEdit *>(table->cellWidget(0, 1));
+    QVERIFY(editor);
+    editor->setFocus();
+    QTest::keyClick(editor, Qt::Key_K, Qt::AltModifier);
+    QVERIFY(QMetaObject::invokeMethod(&accepted, "accept"));
+    QCOMPARE(settings.keyset.shortcut(KeyAction::PageUp), QKeySequence(QStringLiteral("Alt+K")));
+}
+
+void TestMainWindow2::aboutPanelFollowsMenuBar()
+{
+    MainWindow window;
+    window.move(30, 30);
+    window.show();
+    window.findChild<QAction *>(QStringLiteral("actAbout"))->trigger();
+    auto *panel = window.findChild<QDialog *>(QStringLiteral("aboutDialog"));
+    QVERIFY(panel && panel->isVisible());
+    QCOMPARE(panel->windowType(), Qt::Popup);
+    QVERIFY(panel->width() <= 360);
+    QVERIFY(panel->height() <= 200);
+    const auto before = panel->pos();
+    window.move(window.pos() + QPoint(25, 20));
+    QCoreApplication::processEvents();
+    QCOMPARE(panel->pos(), before + QPoint(25, 20));
+    QTest::keyClick(panel, Qt::Key_Escape);
+    QVERIFY(!panel->isVisible());
+}
+
+void TestMainWindow2::chromeDoesNotOverlapReading()
+{
+    MainWindow window;
+    window.resize(640, 480);
+    window.show();
+    auto *view = window.findChild<ReadingView *>();
+    QVERIFY(view);
+    QCoreApplication::processEvents();
+    QVERIFY(view->geometry().top() >= window.menuBar()->geometry().bottom());
+    QVERIFY(QMetaObject::invokeMethod(&window, "onSearchRequested"));
+    QCoreApplication::processEvents();
+    auto *bar = window.findChild<QToolBar *>(QStringLiteral("searchBar"));
+    QVERIFY(bar && bar->isVisible());
+    QVERIFY(view->geometry().top() > bar->geometry().bottom());
 }
 
 static QString makeTxt(const QTemporaryDir &dir, const QString &name)
@@ -451,6 +707,39 @@ void TestMainWindow2::editModeCtrlEToggles()
 
 int main(int argc, char *argv[])
 {
+    if (argc == 4 && QByteArray(argv[1]) == "--progress-session") {
+        QApplication app(argc, argv);
+        app.setApplicationName(QStringLiteral("ReaderProgressTest"));
+        app.setOrganizationName(QStringLiteral("Reader"));
+        const QString path = QString::fromLocal8Bit(argv[2]);
+        const QString mode = QString::fromLocal8Bit(argv[3]);
+        MainWindow window;
+        if (mode == QStringLiteral("save"))
+            window.resize(720, 520);
+        else
+            window.applyWindowState();
+        if (mode == QStringLiteral("save"))
+            window.openBook(path);
+        else
+            window.openLastRead();
+        window.show();
+        QTimer::singleShot(100, &window, [&] {
+            auto *view = window.findChild<ReadingView *>();
+            if (mode == QStringLiteral("save")) {
+                window.toggleHideBorder();
+                view->goToPage(3);
+                view->lineDown();
+            }
+            QFile report(QFileInfo(path).dir().filePath(mode + QStringLiteral(".txt")));
+            if (report.open(QIODevice::WriteOnly))
+                report.write(QByteArray::number(view->currentPage()) + " "
+                             + QByteArray::number(view->pixelOffset()) + " "
+                             + QByteArray::number(window.menuBar()->isHidden()));
+            report.close();
+            window.quitApplication();
+        });
+        return app.exec();
+    }
     QTemporaryDir tmp;
     qputenv("XDG_DATA_HOME", tmp.path().toUtf8());
     qputenv("XDG_CONFIG_HOME", tmp.path().toUtf8());

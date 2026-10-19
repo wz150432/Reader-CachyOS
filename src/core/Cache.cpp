@@ -39,6 +39,7 @@ void Cache::load()
         p.filePath = o.value(QStringLiteral("file")).toString();
         p.chapterIndex = o.value(QStringLiteral("chapter")).toInt();
         p.pageIndex = o.value(QStringLiteral("page")).toInt();
+        p.pixelOffset = o.value(QStringLiteral("pixel_offset")).toDouble();
         p.lastOpened = static_cast<qint64>(o.value(QStringLiteral("last_opened")).toDouble());
         if (!p.filePath.isEmpty())
             m_progress.append(p);
@@ -69,6 +70,7 @@ void Cache::save() const
         o.insert(QStringLiteral("file"), p.filePath);
         o.insert(QStringLiteral("chapter"), p.chapterIndex);
         o.insert(QStringLiteral("page"), p.pageIndex);
+        o.insert(QStringLiteral("pixel_offset"), p.pixelOffset);
         o.insert(QStringLiteral("last_opened"), static_cast<double>(p.lastOpened));
         arr.append(o);
     }
@@ -91,13 +93,14 @@ void Cache::save() const
 
 void Cache::upsertProgress(const BookProgress &p)
 {
-    for (BookProgress &item : m_progress) {
-        if (item.filePath == p.filePath) {
-            item = p;
-            return;
+    // Newest use wins even when two updates have the same second timestamp.
+    for (qsizetype i = 0; i < m_progress.size(); ++i) {
+        if (m_progress.at(i).filePath == p.filePath) {
+            m_progress.removeAt(i);
+            break;
         }
     }
-    m_progress.append(p);
+    m_progress.prepend(p);
 }
 
 std::optional<BookProgress> Cache::progress(const QString &filePath) const

@@ -8,22 +8,19 @@
 
 int main(int argc, char *argv[])
 {
+    const QByteArray command = argc >= 2 ? QByteArray(argv[1]) : QByteArray();
+    if (command == "--toggle-hide" || command == "--hide" || command == "--show") {
+        // Global shortcuts only need local IPC: avoid display, theme and font startup.
+        QCoreApplication app(argc, argv);
+        QString error;
+        return reader::RemoteControl::sendCommand(QString::fromLatin1(command.mid(2)), &error)
+            ? 0 : 1;
+    }
     QSurfaceFormat fmt;
     fmt.setAlphaBufferSize(8);
     QSurfaceFormat::setDefaultFormat(fmt);
     QApplication app(argc, argv);
     const QStringList args = app.arguments();
-    static const QStringList remoteCommands = {
-        QStringLiteral("--toggle-hide"),
-        QStringLiteral("--hide"),
-        QStringLiteral("--show")
-    };
-    if (args.size() >= 2 && remoteCommands.contains(args.at(1))) {
-        QString error;
-        if (reader::RemoteControl::sendCommand(args.at(1).mid(2), &error))
-            return 0;
-        return 1;
-    }
     app.setApplicationName(QStringLiteral("Reader"));
     app.setOrganizationName(QStringLiteral("Reader"));
     app.setDesktopFileName(QStringLiteral("reader.desktop"));
@@ -50,13 +47,13 @@ int main(int argc, char *argv[])
         if (!args.at(i).startsWith(QLatin1Char('-')))
             openFiles.append(args.at(i));
     }
+    w.applyWindowState();
+    if (!w.hasSavedWindowGeometry())
+        w.resize(960, 720);
     if (openFiles.isEmpty())
         w.openLastRead();
     else
         w.openBook(openFiles.first());
-    w.applyWindowState();
-    if (!w.hasSavedWindowGeometry())
-        w.resize(960, 720);
     w.show();
     w.restoreNiriFloatingPosition();
     return app.exec();
